@@ -1,233 +1,111 @@
 # Microsoft Fabric Trivia Challenge
 
-A quiz web application where players assess their Microsoft Fabric knowledge through an engaging, time-pressured quiz game.
+A quiz web application that helps event attendees and learners assess their Microsoft Fabric knowledge. Players answer multiple-choice questions against the clock, earn time through streaks, and review incorrect answers.
 
-![A screenshot of the main game screen](docs/src/assets/trivia-game.png)
+The application uses React and TypeScript, Rayfin Functions, a Fabric SQL database, and Fabric Real-Time Intelligence for telemetry.
 
-## 🎯 Overview
+> This application requires access to the Rayfin preview in Microsoft Fabric. The complete game runs in Fabric. Local development supports building and testing the code, but not local gameplay or offline operation.
 
-- **Purpose**: Help events attendees assess their knowledge about Microsoft Fabric, and demonstrate Fabric capabilities.
-- **Format**: Interactive quiz game with time pressure and streak bonuses
-- **Tech Stack**: React + TypeScript + .NET 10 + Microsoft Fabric (Cosmos DB, Realtime Intelligence, Power BI)
+## Features
 
-![Architecture diagram of the solution](docs/src/assets/architecture.png)
+- Timed questions with streak bonuses, hearts, and answer feedback.
+- Question pools loaded from CSV files prepared in Excel or a text editor.
+- Touch, mouse, and keyboard controls.
+- One Fabric operator sign-in per kiosk browser. Attendees register without Fabric accounts.
+- Saved game results and event telemetry for analysis in Fabric.
 
-## 🚀 Getting Started
+## Getting started
 
 ### Prerequisites
 
-- [Docker](https://www.docker.com/products/docker-desktop)
-- [Visual Studio Code](https://code.visualstudio.com/)
-- [Dev Containers Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- [Node.js](https://nodejs.org/) 24 and npm.
+- [Git](https://git-scm.com/).
+- A Fabric workspace with capacity, Rayfin enabled, and permission to deploy the application and its analytics resources.
 
-### Option 1: Docker Local Testing (Quickest)
+Command examples use Bash. On Windows, use Git Bash or WSL.
 
-Run the complete application with Cosmos DB Emulator:
+### 1. Clone and install
 
 ```bash
-# Clone and start
 git clone https://github.com/microsoft/trivia-challenge.git
 cd trivia-challenge
-./docker.sh local:up
-
-# Access at http://localhost:8080
+npm ci --include=dev &&
+  npm --prefix rayfin/functions ci --include=dev &&
+  npx rayfin --version
 ```
 
-This builds and runs both frontend and backend with a local Cosmos DB Emulator.
+The frontend and Functions have separate dependency lockfiles, so both installation commands are required. Packages are downloaded from the public npm registry. The CLI is the `@microsoft/rayfin-cli` development dependency, which provides the `rayfin` command. The version command must succeed before continuing; see [Install dependencies and the CLI](docs/deployment.md#1-install-dependencies-and-the-cli).
 
-### Option 2: Dev Container (Recommended for Development)
+### 2. Deploy to Fabric
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/microsoft/trivia-challenge.git
-   cd trivia-challenge
-   ```
+Follow [Deploy the application](docs/deployment.md) to create the app, provision analytics, and configure the backend. Use your own tenant and workspace; the repository does not provide a shared hosted instance.
 
-2. Open in VS Code:
-   ```bash
-   code .
-   ```
+### 3. Load questions
 
-3. When prompted, click "Reopen in Container" (or press `F1` → "Dev Containers: Reopen in Container")
+Open the deployed app and select **Sign in operator with Fabric**. After signing in, open **Operator setup** and select **Load questions and create pools**.
 
-4. Wait for the container to build and start (~5-10 minutes first time)
+Use [examples/questions.csv](examples/questions.csv) as a starting point. The [Excel and CSV guide](docs/questions.md) defines every column, explains the correct-answer numbering, and walks through saving and importing the file.
 
-5. Once ready, start the services:
-   ```bash
-   # Terminal 1: Start the .NET API
-   cd backend/TriviaChallenge.Api
-   dotnet run
+### 4. Run the challenge
 
-   # Terminal 2: Start the frontend
-   npm run dev
-   ```
+Return to attendee registration. Each player registers, selects a pool, reads the instructions, and plays. Wait for the result to finish saving before selecting **Play Again** for the next attendee.
 
-6. Access the application:
-   - **Frontend**: http://localhost:5173
-   - **API**: http://localhost:5000
-   - **API Docs**: http://localhost:5000/swagger
-   - **Cosmos DB Explorer**: https://localhost:8081/_explorer/index.html
+For station setup and event operation, see [Run a kiosk](docs/operations.md).
 
-### What's Included in Dev Container
+## Development
 
-- ✅ Node.js 22 with TypeScript
-- ✅ .NET 10 SDK
-- ✅ Azure Cosmos DB Emulator (with auto-configuration)
-- ✅ All required VS Code extensions
-
-For a detailed walkthrough, see the [Development Setup Guide](docs/development-setup.md).
-
-## 📁 Project Structure
-
-```
-trivia-challenge/
-├── .devcontainer/          # Dev container configuration
-│   ├── devcontainer.json   # VS Code dev container config
-│   ├── docker-compose.yml  # Docker Compose setup
-│   ├── Dockerfile          # Custom dev container image
-│   └── post-create.sh      # Setup script
-├── backend/                # .NET 10 API
-│   └── TriviaChallenge.Api/    # Main API project
-├── docs/                   # Documentation
-├── frontend/               # React + TypeScript frontend
-└── infra/                  # Azure Bicep infrastructure templates
-```
-
-## 🏗️ Architecture
-
-- **Frontend**: React + TypeScript + Tailwind CSS + Vite
-- **Backend**: .NET 10 Minimal API with versioning
-- **Database**: Azure Cosmos DB (local emulator for development)
-- **Analytics**: Microsoft Fabric for real-time telemetry
-- **Hosting**: Azure Web App for containers
-
-## 🎮 Game Features
-
-- **Time Pressure**: Base 1 minute timer with streak bonuses (up to 2 minutes total)
-- **Heart System**: Start with five hearts, lose half a heart on each incorrect answer, and end the run instantly at zero hearts
-- **Difficulty Levels**: Easy/Medium/Hard with forgiving progression
-- **Leaderboards**: Daily and cumulative rankings
-- **Telemetry**: Comprehensive tracking of all interactions
-- **Input Methods**: Touch, mouse, and keyboard support (Z/C/B/M keys)
-
-## 🔧 Development
-
-### Development Modes
-
-#### Docker Development Mode
-```bash
-# Start backend + Cosmos DB in Docker
-./docker.sh dev:up
-
-# Start frontend dev server (in another terminal)
-./docker.sh dev:frontend
-```
-
-#### Manual Development Mode
-```bash
-# Terminal 1: Backend
-cd backend/TriviaChallenge.Api
-dotnet run
-
-# Terminal 2: Frontend
-cd frontend
-npm run dev
-```
-
-### API Endpoints
-
-The API uses versioned endpoints with the pattern: `api/v{version}/{resource}`
-
-- **Users**: `POST /api/v1.0/users/register`, `GET /api/v1.0/users/{email}`
-- **Sessions**: `POST /api/v1.0/sessions`, `POST /api/v1.0/sessions/{id}/complete`
-- **Questions**: `POST /api/v1.0/questions/upload`, `GET /api/v1.0/questions/draw/{seed}`
-
-See API documentation at http://localhost:5000/swagger when running.
-
-### Database Schema
-
-- **Users**: Email (PK), Name, Phone
-- **Questions**: Question text + Answer
-- **QuestionDraws**: Randomized question sets with seed-based reproducibility
-- **GameSessions**: Links users to draws with scores
-
-### Running Tests
+Run these commands from the repository root:
 
 ```bash
-# Backend tests
-cd backend/TriviaChallenge.Api.Tests
-dotnet test
-
-# Frontend tests
+npm run build
+npm run schema:check
 npm test
+npm run lint
 ```
 
-## 📦 Docker & Deployment
-
-### Docker Development & Testing
-
-Quick commands:
-```bash
-./docker.sh help           # Show all commands
-./docker.sh local:up       # Start local test environment (with Cosmos Emulator)
-./docker.sh prod:up        # Start production environment (needs .env with Azure Cosmos DB)
-./docker.sh dev:up         # Start development environment
-./docker.sh clean          # Clean up Docker resources
-```
-
-See the [Docker reference](docs/src/content/docs/reference/DOCKER.md) for comprehensive documentation including multi-stage production builds, Docker Compose setups, and troubleshooting tips.
-
-### Azure Deployment
-
-Deploy the application to Azure Container Registry and Azure Web Apps:
+For frontend development:
 
 ```bash
-# Deploy with full control
-./deploy-image.sh <acr-name> \
-  --resource-group <resource-group> \
-  --app-name <app-service-name> \
-  --image-tag latest
+npm run dev:frontend
 ```
 
-The deployment script will:
-1. Build the Docker image from the Dockerfile
-2. Push the image to your Azure Container Registry
-3. Update and restart the Azure Web App to pull the latest image
+Vite serves the frontend at `http://127.0.0.1:5173`. Fabric sign-in and gameplay remain unavailable on localhost. Use a dedicated Fabric deployment for the complete application.
 
-See the [Infrastructure Deployment Guide](docs/deploying-infrastructure.md) and [Code Deployment Guide](docs/deploying-code.md) for details.
+`npm run dev` starts Rayfin's Fabric-backed development workflow and can create or update cloud resources. It is not an offline alternative.
 
-## 📚 Documentation
+## Project structure
 
-| Guide | Description |
-|-------|-------------|
-| [Development Setup](docs/development-setup.md) | Set up your dev environment with Docker and Dev Containers |
-| [Deploying Infrastructure](docs/deploying-infrastructure.md) | Deploy Azure resources with Bicep templates |
-| [Deploying Code](docs/deploying-code.md) | Build, push, and deploy the application |
-| [Telemetry Events Reference](docs/telemetry-events.md) | Complete list of analytics events and properties |
-| [Dev Container Setup](.devcontainer/README.md) | Detailed devcontainer documentation |
-| [Infrastructure Reference](infra/README.md) | Bicep template parameters and configuration |
-| [Station ID Tracking](docs/STATION_ID_TRACKING.md) | Station-based telemetry for kiosk deployments |
-| [API Specifications](docs/specs/) | Detailed API spec documents |
-| [Game Logic](docs/src/content/docs/product/game_logic.md) | Game mechanics and timer system |
+| Path                | Contents                                            |
+| ------------------- | --------------------------------------------------- |
+| `src/`              | React pages, game state, timer, and client services |
+| `public/`           | Logos, station avatars, and pool icons              |
+| `rayfin/data/`      | SQL entity definitions                              |
+| `rayfin/functions/` | Backend Functions and their tests                   |
+| `scripts/`          | Deployment configuration and analytics provisioning |
+| `infra/`            | Telemetry table definitions and KQL queries         |
+| `examples/`         | Sample question CSV                                 |
+| `docs/`             | Deployment, operator, and developer documentation   |
+
+## Documentation
+
+| Guide | Contents |
+| --- | --- |
+| [Deployment](docs/deployment.md) | Prerequisites, first deployment, updates, and backend configuration |
+| [Excel and CSV questions](docs/questions.md) | Spreadsheet layout, answer keys, pools, metadata, and import errors |
+| [Kiosk operation](docs/operations.md) | Operator sign-in, station IDs, player handoff, and troubleshooting |
+| [Architecture](docs/architecture.md) | Components, game rules, data storage, and request handling |
+| [Telemetry](docs/telemetry-events.md) | Event reference, delivery monitoring, privacy, and report queries |
 
 ## Contributing
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit [Contributor License Agreements](https://cla.opensource.microsoft.com).
+This project welcomes contributions and suggestions. Most contributions require you to agree to a Contributor License Agreement declaring that you have the right to grant us the rights to use your contribution. For details, visit [Contributor License Agreements](https://cla.opensource.microsoft.com).
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+When you submit a pull request, a CLA bot determines whether you need to provide a CLA. Follow its instructions. You only need to do this once across repositories using our CLA.
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+This project has adopted the [Microsoft Open Source Code of Conduct](CODE_OF_CONDUCT.md). For more information, see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com).
+
+See [Support](SUPPORT.md) for help, [Security](SECURITY.md) for vulnerability reporting, and [LICENSE](LICENSE) for the MIT license.
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions must not cause confusion or imply Microsoft sponsorship. Third-party trademarks and logos are subject to those third parties' policies.

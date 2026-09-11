@@ -1,0 +1,22 @@
+// The verifier supplies the deployed app origin. No synthetic events or participant payloads are returned.
+declare query_parameters (appOrigin:string, sessionId:string = "", stationId:string = "");
+TriviaTelemetry
+| where timestamp > ago(2h)
+| where tostring(context.url) startswith strcat(appOrigin, "/")
+| where isempty(sessionId) or tostring(context.sessionId) == sessionId or tostring(properties.sessionId) == sessionId
+| summarize deliveries=count(), arg_max(ingestedAtUtc, *) by eventId
+| summarize uniqueEvents=count(), deliveredRows=sum(deliveries), duplicateRows=sum(deliveries - 1),
+    eventsWithParticipant=countif(isnotempty(userId)),
+    eventsWithSession=countif(isnotempty(tostring(context.sessionId))),
+    eventsWithPool=countif(isnotempty(tostring(context.poolId))),
+    eventsWithStation=countif(isnotempty(tostring(context.stationId))),
+    eventsAtExpectedStation=countif(isnotempty(stationId) and tostring(context.stationId) == stationId),
+    correctAnswerEvents=countif(eventName == "game.answerquestion" and tobool(properties.isCorrect)),
+    latestScore=max(tolong(properties.totalScore)),
+    reportedQuestionsAnswered=max(tolong(properties.questionsAnswered)),
+    reportedCorrectAnswers=max(tolong(properties.correctAnswers)),
+    finalHearts=minif(toreal(properties.heartsRemaining), eventName == "game.ended"),
+    endReasons=make_set_if(tostring(properties.gameOverReason), eventName == "game.ended", 5),
+    latestEventUtc=max(timestamp), latestIngestedUtc=max(ingestedAtUtc)
+    by eventName
+| order by eventName asc
