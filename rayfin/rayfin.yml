@@ -1,0 +1,33 @@
+id: triviachallenge
+name: TriviaChallenge
+version: 1.0.11
+services:
+  auth:
+    enabled: true
+    customClaims:
+      app_version: 1.0.0
+    scopes:
+      - read:data
+      - write:data
+    password:
+      enabled: false
+    allowedRedirectUris:
+      - http://localhost:5173
+      - http://127.0.0.1:5173
+    fabric:
+      enabled: true
+  data:
+    enabled: true
+    dialect: mssql
+    buildCommand: npm run build:schema
+  staticHosting:
+    enabled: true
+    folder: dist
+    buildCommand: npm run build
+    indexDocument: index.html
+  functions:
+    enabled: true
+    path: rayfin/functions
+    buildCommand: npm run build
+  storage:
+    enabled: false

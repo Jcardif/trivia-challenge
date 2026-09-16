@@ -1,0 +1,5 @@
+Category,Question,Answer1,Answer2,Answer3,Answer4,CorrectAnswerKey,Metadata,Pools
+Fabric,What is the unified data lake in Microsoft Fabric?,OneLake,Azure DevOps,Microsoft Teams,Excel,0,,fabric-basics
+Power BI,Which language defines measures in Power BI?,HTML,DAX,PowerShell,CSS,1,,fabric-basics
+Data Engineering,Which engine runs Spark notebooks in Fabric?,MySQL,SQLite,Apache Spark,Redis,2,,fabric-basics
+Data Warehouse,Which language can query a Fabric warehouse?,HTML,CSS,Markdown,T-SQL,3,,fabric-basics

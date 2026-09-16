@@ -1,0 +1,20 @@
+{
+  "name": "fabric-trivia-functions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/function_app.js",
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@azure/event-hubs": "5.12.2",
+    "@microsoft/fabric-user-data-functions": "1.36.0-alpha.1620",
+    "csv-parse": "6.1.0",
+    "tedious": "19.2.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "24.6.0"
+  }
+}
