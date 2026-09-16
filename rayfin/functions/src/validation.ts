@@ -1,5 +1,6 @@
 import type { CreatePoolInput, EndSessionRequest, RegisterUserRequest, SubmitAnswerRequest } from './contracts.js'
 import { DomainError } from './errors.js'
+import { GAME_RULE_DEFAULTS } from './gameRules.js'
 
 export const TEXT_LIMIT = 4000
 export const SLUG_LIMIT = 400
@@ -98,7 +99,7 @@ export function answerInput(value: unknown): SubmitAnswerRequest & { sessionId: 
   return {
     sessionId: uuid(input.sessionId, 'sessionId'),
     questionId: uuid(input.questionId, 'questionId'),
-    answerIndex: integer(input.answerIndex, 'answerIndex', 0, 3),
+    answerIndex: integer(input.answerIndex, 'answerIndex', 0, GAME_RULE_DEFAULTS.questions.answersPerQuestion - 1),
     timeElapsed: number(input.timeElapsed, 'timeElapsed'),
     isCorrect: boolean(input.isCorrect, 'isCorrect'),
   }
@@ -106,14 +107,24 @@ export function answerInput(value: unknown): SubmitAnswerRequest & { sessionId: 
 
 export function endInput(value: unknown): EndSessionRequest & { sessionId: string } {
   const input = record(value)
-  const heartsRemaining = number(input.heartsRemaining, 'heartsRemaining', 0, 5)
+  const heartsRemaining = number(
+    input.heartsRemaining,
+    'heartsRemaining',
+    GAME_RULE_DEFAULTS.hearts.minimum,
+    GAME_RULE_DEFAULTS.hearts.initialCount,
+  )
   if (!Number.isInteger(heartsRemaining * 2)) return invalid('heartsRemaining must use half-heart increments.')
   return {
     sessionId: uuid(input.sessionId, 'sessionId'),
     questionsAnswered: integer(input.questionsAnswered, 'questionsAnswered'),
     correctAnswers: integer(input.correctAnswers, 'correctAnswers'),
-    streaksCompleted: integer(input.streaksCompleted, 'streaksCompleted', 0, 5),
-    finalTimeRemaining: number(input.finalTimeRemaining, 'finalTimeRemaining', 0, 120),
+    streaksCompleted: integer(input.streaksCompleted, 'streaksCompleted', 0, GAME_RULE_DEFAULTS.timer.maxStreaks),
+    finalTimeRemaining: number(
+      input.finalTimeRemaining,
+      'finalTimeRemaining',
+      0,
+      GAME_RULE_DEFAULTS.timer.maxTotalSeconds,
+    ),
     heartsRemaining,
     gameOverReason: optionalText(input.gameOverReason, 'gameOverReason'),
   }

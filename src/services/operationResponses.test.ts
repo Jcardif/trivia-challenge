@@ -25,4 +25,19 @@ describe('Function response validation', () => {
     expect(validate.importQuestions({ importId: 'import', acceptedCount: 2, questionIds: ['question'] })).toBe(false)
     expect(validate.endSession({ sessionId: 'session' })).toBe(false)
   })
+
+  it('requires consistent pool counts and identities in an import preview', () => {
+    const preview = {
+      importId: 'import', questionCount: 2, previousImportCount: 0,
+      pools: [{ slug: 'fabric', questionCount: 2 }],
+    }
+    expect(validate.previewQuestionImport(preview)).toBe(true)
+    expect(validate.previewQuestionImport({ ...preview, pools: [] })).toBe(false)
+    expect(validate.previewQuestionImport({ ...preview, previousImportCount: -1 })).toBe(false)
+    expect(validate.previewQuestionImport({ ...preview, pools: [preview.pools[0], preview.pools[0]] })).toBe(false)
+    expect(validate.previewQuestionImport({ ...preview, pools: [{ slug: 'fabric', questionCount: 3 }] })).toBe(false)
+    expect(validate.previewQuestionImport({ ...preview, pools: [{ ...preview.pools[0], existingPool: {
+      id: 'other', name: 'Other', iconPath: '/pools/default.svg', isActive: true, displayOrder: 0,
+    } }] })).toBe(false)
+  })
 })

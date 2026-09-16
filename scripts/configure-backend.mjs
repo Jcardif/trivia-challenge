@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util'
 import { createFabricApi, requireUuid } from './fabric-api.mjs'
-import { getRemoteEndpoint } from '../node_modules/@microsoft/rayfin-cli/dist/utils/remote-endpoint-utils.js'
 import { applySecretsToRemoteEndpoint } from '../node_modules/@microsoft/rayfin-cli/dist/services/fabric/rayfin-item.js'
+import { resolveDeploymentTarget } from './deployment-target.mjs'
 
 const { values } = parseArgs({
   options: {
@@ -11,15 +11,14 @@ const { values } = parseArgs({
     'eventstream-id': { type: 'string' },
   },
 })
-const workspaceId = requireUuid(values['workspace-id'], 'workspace-id')
-const appId = requireUuid(values['app-id'], 'app-id')
+const target = await resolveDeploymentTarget({
+  workspaceId: values['workspace-id'],
+  appId: values['app-id'],
+})
+const { workspaceId, appId, itemEndpoint } = target
 const sqlId = requireUuid(values['sql-database-id'], 'sql-database-id')
 const eventstreamId = requireUuid(values['eventstream-id'], 'eventstream-id')
-const itemEndpoint = getRemoteEndpoint()
-if (!itemEndpoint?.includes(`/${workspaceId}/`) || !itemEndpoint.includes(`/${appId}`)) {
-  throw new Error('The supplied target does not match this project deployment registry.')
-}
-const api = await createFabricApi()
+const api = await createFabricApi({ target })
 const base = `workspaces/${workspaceId}`
 const { body: database } = await api.request(`${base}/sqlDatabases/${sqlId}`)
 const [server, port] = (database?.properties?.serverFqdn ?? '').split(',')

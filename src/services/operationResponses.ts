@@ -4,7 +4,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 const isString = (value: unknown): value is string => typeof value === 'string'
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
-const isCount = (value: unknown) => isNumber(value) && Number.isInteger(value) && value >= 0
+const isCount = (value: unknown): value is number => isNumber(value) && Number.isInteger(value) && value >= 0
 const optionalString = (value: unknown) => value === undefined || isString(value)
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString)
 
@@ -34,6 +34,15 @@ export const operationResponseValidators: Record<keyof OperationMap, (value: unk
   listPools: value => Array.isArray(value) && value.every(pool),
   getPool: pool,
   createPool: pool,
+  previewQuestionImport: value => isRecord(value) && isString(value.importId) &&
+    isCount(value.questionCount) && value.questionCount > 0 && isCount(value.previousImportCount) &&
+    Array.isArray(value.pools) && value.pools.length > 0 &&
+    new Set(value.pools.map(destination => isRecord(destination) ? destination.slug : undefined)).size === value.pools.length &&
+    value.pools.every(destination => isRecord(destination) && isString(destination.slug) &&
+      isCount(destination.questionCount) && destination.questionCount > 0 &&
+      isNumber(value.questionCount) && destination.questionCount <= value.questionCount &&
+      (destination.existingPool === undefined || pool(destination.existingPool) &&
+        isRecord(destination.existingPool) && destination.existingPool.id === destination.slug)),
   importQuestions: value => isRecord(value) && isString(value.importId) &&
     isCount(value.acceptedCount) && strings(value.questionIds) && value.questionIds.length === value.acceptedCount,
   startSession: value => isRecord(value) && isString(value.sessionId) && isString(value.userId) &&

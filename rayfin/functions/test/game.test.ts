@@ -1,11 +1,32 @@
 import { describe, expect, it } from '@jest/globals'
 import {
-  initialStats, replayAnswer, scoreAnswer, seededRandom, shuffle, shuffleChoices,
-  summarizeAnswers, verifyEndCounters, verifyImportReplay, verifyStartReplay,
+  applyAnswerRules, GAME_RULE_DEFAULTS, initialStats, replayAnswer, scoreAnswer, seededRandom,
+  shuffle, shuffleChoices, summarizeAnswers, timeRemainingAfterAnswer, verifyEndCounters, verifyImportReplay,
+  verifyStartReplay,
 } from '../src/game.js'
 import { DomainError } from '../src/errors.js'
 
 describe('game calculations', () => {
+  it('keeps the executable defaults aligned with approved rules', () => {
+    expect(GAME_RULE_DEFAULTS).toMatchObject({
+      timer: {
+        initialSeconds: 60,
+        countdownSeconds: 3,
+        bonusSeconds: 10,
+        maxStreaks: 5,
+        maxTotalSeconds: 120,
+        wrongAnswerPauseSeconds: 5,
+        wrongAnswerPenaltySeconds: 0.25,
+      },
+      feedback: { correctAnswerHaloMilliseconds: 500 },
+      streak: { threshold: 5, decrementOnWrong: 1 },
+      scoring: { pointsPerCorrectAnswer: 10 },
+      hearts: { initialCount: 5, decrementOnWrong: 0.5, minimum: 0 },
+      keyboard: { mappings: { A: 0, K: 1, S: 2, L: 3 } },
+      questions: { answersPerQuestion: 4 },
+    })
+  })
+
   it('computes ten points per correct answer and half a heart per wrong answer', () => {
     expect(summarizeAnswers([true, false, true])).toEqual({
       totalScore: 20, questionsAnswered: 3, correctAnswers: 2,
@@ -24,6 +45,37 @@ describe('game calculations', () => {
       totalScore: 300, streaksCompleted: 5, streakProgress: 0, heartsHalfUnits: 10,
     })
     expect(summarizeAnswers(Array<boolean>(12).fill(false))).toMatchObject({ heartsHalfUnits: 0, streakProgress: 0 })
+  })
+
+  it('continues resetting streak progress after the final award without awarding another bonus', () => {
+    const result = applyAnswerRules({
+      totalScore: 250,
+      questionsAnswered: 25,
+      correctAnswers: 25,
+      streaksCompleted: GAME_RULE_DEFAULTS.timer.maxStreaks,
+      streakProgress: GAME_RULE_DEFAULTS.streak.threshold - 1,
+      heartsHalfUnits: 10,
+    }, true)
+
+    expect(result).toMatchObject({
+      pointsEarned: 10,
+      awardedStreakLevel: null,
+      streakProgressBeforeReset: null,
+      stats: {
+        totalScore: 260,
+        questionsAnswered: 26,
+        correctAnswers: 26,
+        streaksCompleted: 5,
+        streakProgress: 0,
+        heartsHalfUnits: 10,
+      },
+    })
+  })
+
+  it('deducts the wrong-answer timer penalty without crossing zero', () => {
+    expect(timeRemainingAfterAnswer(60, true)).toBe(60)
+    expect(timeRemainingAfterAnswer(60, false)).toBe(59.75)
+    expect(timeRemainingAfterAnswer(0.1, false)).toBe(0)
   })
 
   it('does not mutate previous state', () => {

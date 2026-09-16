@@ -43,7 +43,7 @@ A pool is a selectable collection of questions. Its **slug** is the value used i
 
 Enter multiple slugs in one Excel cell as `fabric-basics,reporting`. Excel will quote that cell when saving the CSV. The importer trims whitespace, converts slugs to lowercase, and removes repeated slugs.
 
-A blank or missing `Pools` value assigns the question to `default`. To make those questions selectable, create a display pool with slug `default`. Importing questions does not create display pools.
+A blank or missing `Pools` value assigns the question to `default`. The import preview lists every destination, including `default`, and identifies missing display pools. Confirm their names and select the creation checkbox to save those pools together with the questions. Existing pools are never renamed or overwritten by an import.
 
 ### Metadata and additional columns
 
@@ -80,15 +80,29 @@ When editing CSV directly, enclose a cell in double quotes if it contains commas
 
 1. Open the deployed app and sign in as the Fabric operator.
 2. Open **Operator setup**, then **Load questions and create pools**.
-3. Under **Create a pool**, enter the slug and display name. For the sample, use `fabric-basics` and `Fabric basics`. Select **Create pool**.
-4. Under **Import a CSV**, select the saved `.csv` file.
-5. Select **Import questions** and keep the tab open.
-6. Wait for **Import complete** and confirm the accepted question count. The sample contains four questions.
-7. Select **Back to attendee registration** to play.
+3. Under **Import a CSV**, select the saved `.csv` file. To seed a new deployment with the bundled example, select **Use sample questions** instead.
+4. Read **Import preview**. It shows the total question count, every destination slug, and the number of questions assigned to each pool. A question assigned to several pools counts once in the total and once under each destination.
+5. For missing pools, enter the display names and select the checkbox to create them. For the sample, the slug is `fabric-basics`; use `Fabric basics` as its display name. These pools use the included default icon.
+6. If the exact file was imported before, the page shows how many previous imports exist. Select **Add another copy of these questions** only when another additive import is intended.
+7. Select **Import questions** and keep the tab open. Previewing a file or selecting the sample does not write data.
+8. Wait for **Import complete** and confirm the accepted question count. The sample contains four questions. Missing pools and questions are saved in the same transaction.
+9. Select **Back to attendee registration** to play.
 
-Existing pools can be reused. If there is only one active pool, the app selects it automatically for players.
+Existing pools can be reused. Inactive destinations are identified in the preview; importing into them does not make them active. If there is only one active pool, the app selects it automatically for players.
 
-**Imports add questions; they do not replace existing questions.** Selecting a file again starts a new import and can add duplicate questions. If a submission fails, use **Retry this import** without selecting the file again. A retry keeps the original import identity.
+The separate **Create a pool** form remains available when you want to set a description or choose an existing icon before importing. Use the same slug as the CSV. See [Pool artwork](operations.md#pool-artwork).
+
+**Imports add questions; they do not replace existing questions.** Selecting a file again starts a new import. The duplicate warning compares exact file contents, including whitespace and line endings; it does not deduplicate questions across different files. Another copy requires explicit confirmation.
+
+If a submission fails, use **Retry this import** without selecting the file again. A retry keeps the original import identity, CSV, pool definitions, and duplicate confirmation. It cannot add the same import twice. If another operator imported the file after your preview, the backend rejects an unconfirmed copy. Select **Review this import again** to refresh the preview and decide whether to add another copy.
+
+### Calling the importer from code
+
+Use the operator-authenticated Functions client. `previewQuestionImport` takes `importId` and `csv` and returns destination counts, existing pool details, and the number of previous completed imports with the same content and a different identifier.
+
+`importQuestions` takes the same `importId` and `csv`, plus optional `poolsToCreate` and `allowDuplicateContent` values. Every requested pool must have a unique normalized slug referenced by the CSV. Pool creation is explicit, transactional, and never overwrites existing metadata. Only pools listed in `poolsToCreate` are created. Direct callers can import memberships without display records, but players cannot select those pools until the records exist. The operator page requires confirmation of missing display pools to avoid an empty selector.
+
+`allowDuplicateContent` defaults to `false`. A fresh import identifier for previously imported content returns `DUPLICATE_IMPORT` unless this option is explicitly `true`. A replay of a completed import returns its original question identifiers without requiring another confirmation. Retain the complete request across retries.
 
 ## Limits and errors
 
@@ -102,6 +116,7 @@ Existing pools can be reused. If there is only one active pool, the app selects 
 | Header names | Case-sensitive and unique |
 | Row shape | Every question row must have the same number of cells as the header |
 | Invalid data | The whole import is rejected; no partial question set is saved |
+| Repeated content | A new import of the exact same file requires explicit confirmation |
 
 For most ordinary text, one character is one UTF-16 code unit. Some characters, including many emoji, use two.
 
@@ -112,5 +127,6 @@ For most ordinary text, one character is one UTF-16 code unit. Some characters, 
 | Answer key must be between 0 and 3 | Convert one-based keys to zero-based keys using the mapping above. |
 | A required value is missing | Fill the named cell; whitespace alone does not count. |
 | Text or file exceeds its limit | Shorten the affected field or split the source into smaller imports. |
+| File has already been imported | Review the import again and confirm another copy only if intended. |
 
 The game loads the selected pool's full question set at session start. Large pools take longer to load, even when each import is below the file-size limit.

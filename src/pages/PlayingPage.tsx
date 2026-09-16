@@ -20,6 +20,13 @@ import { sessionService } from '../services/sessionService'
 import { analytics } from '../services/analyticsService'
 import { getStationLockdownMessage, isStationLockdownActive } from '../lib/stationLockdown'
 import {
+  applyAnswerRules,
+  halfUnitsToHearts,
+  heartsToHalfUnits,
+  timeRemainingAfterAnswer,
+  type GameStats,
+} from '../../rayfin/functions/src/gameRules'
+import {
   ANSWER_CHOICE_STYLES,
   HALO_BOX_SHADOWS,
   type HaloVariant,
@@ -84,6 +91,7 @@ export default function PlayingPage() {
     hearts,
     setHearts,
     gameOverReason,
+    score,
     setScore,
     questionsAnswered,
     setQuestionsAnswered,
@@ -114,11 +122,13 @@ export default function PlayingPage() {
   const sessionEndedRef = useRef(false)
   const countdownStartedRef = useRef(false)
   const onTimeUpRef = useRef<() => void>(() => {})
-  const metricsRef = useRef({
+  const metricsRef = useRef<GameStats>({
+    totalScore: score,
     questionsAnswered,
     correctAnswers,
     streaksCompleted,
-    heartsRemaining: hearts,
+    streakProgress: currentStreak,
+    heartsHalfUnits: heartsToHalfUnits(hearts),
   })
   const isMountedRef = useRef(true)
   const questionDisplayTimeRef = useRef<number>(0)
@@ -136,12 +146,14 @@ export default function PlayingPage() {
 
   useEffect(() => {
     metricsRef.current = {
+      totalScore: score,
       questionsAnswered,
       correctAnswers,
       streaksCompleted,
-      heartsRemaining: hearts,
+      streakProgress: currentStreak,
+      heartsHalfUnits: heartsToHalfUnits(hearts),
     }
-  }, [questionsAnswered, correctAnswers, streaksCompleted, hearts])
+  }, [score, questionsAnswered, correctAnswers, streaksCompleted, currentStreak, hearts])
 
   const {
     timeLeft,
@@ -262,10 +274,12 @@ export default function PlayingPage() {
       setIsSubmitting(false)
       answerLockedRef.current = false
       metricsRef.current = {
+        totalScore: 0,
         questionsAnswered: 0,
         correctAnswers: 0,
         streaksCompleted: 0,
-        heartsRemaining: gameConfig.hearts.initialCount,
+        streakProgress: 0,
+        heartsHalfUnits: heartsToHalfUnits(gameConfig.hearts.initialCount),
       }
       setIsPlaying(true)
       setShowCountdown(true)
@@ -330,7 +344,7 @@ export default function PlayingPage() {
       correctAnswers: overrides?.correctAnswers ?? metricsRef.current.correctAnswers,
       streaksCompleted: overrides?.streaksCompleted ?? metricsRef.current.streaksCompleted,
       finalTimeRemaining: overrides?.finalTimeRemaining ?? latestTimeRef.current,
-      heartsRemaining: overrides?.heartsRemaining ?? metricsRef.current.heartsRemaining,
+      heartsRemaining: overrides?.heartsRemaining ?? halfUnitsToHearts(metricsRef.current.heartsHalfUnits),
       gameOverReason: overrides?.gameOverReason ?? gameOverReason ?? undefined,
     }
 
@@ -396,7 +410,7 @@ export default function PlayingPage() {
 
     const isCorrect = answerIndex === currentQuestion.correctAnswerIndex
     const penaltySeconds = gameConfig.timer.wrongAnswerPenaltySeconds
-    const adjustedTimeLeft = isCorrect ? timeLeft : Math.max(0, timeLeft - penaltySeconds)
+    const adjustedTimeLeft = timeRemainingAfterAnswer(timeLeft, isCorrect, gameConfig)
     let timerEndedFromPenalty = false
 
     if (isCorrect) {
@@ -414,13 +428,10 @@ export default function PlayingPage() {
     const remainingTimeSeconds = adjustedTimeLeft
     const questionNumber = currentQuestionIndex + 1
 
-    const heartPenalty = isCorrect ? 0 : gameConfig.hearts.decrementOnWrong
-    const minimumHearts = gameConfig.hearts.minimum
-    const rawNextHearts = isCorrect ? hearts : hearts - heartPenalty
-    const heartsAfterAnswer = isCorrect
-      ? hearts
-      : Math.max(minimumHearts, Math.round(rawNextHearts * 2) / 2)
-    const heartsDepleted = !isCorrect && heartsAfterAnswer <= minimumHearts
+    const ruleResult = applyAnswerRules(metricsRef.current, isCorrect, gameConfig)
+    const { stats } = ruleResult
+    const heartsAfterAnswer = ruleResult.heartsRemaining
+    const heartsDepleted = ruleResult.heartsDepleted
 
     if (!isCorrect && heartsAfterAnswer !== hearts) {
       setHearts(heartsAfterAnswer)
@@ -445,7 +456,7 @@ export default function PlayingPage() {
       heartsRemaining: heartsAfterAnswer,
     }
 
-    if (isCorrect) setScore(previous => previous + gameConfig.scoring.pointsPerCorrectAnswer)
+    setScore(stats.totalScore)
     let answerTracked = false
     queueAnswer({
         questionId,
@@ -476,51 +487,19 @@ export default function PlayingPage() {
         }, { page: 'playing' })
       })
 
-    const streakThreshold = gameConfig.streak.threshold
-    const streakDecrement = gameConfig.streak.decrementOnWrong
-    const maxAwardableStreaks = gameConfig.timer.maxStreaks
-
-    const updatedQuestionsAnswered = metricsRef.current.questionsAnswered + 1
-    const updatedCorrectAnswers = isCorrect
-      ? metricsRef.current.correctAnswers + 1
-      : metricsRef.current.correctAnswers
-
-    let updatedStreakProgress = currentStreak
-    let updatedStreaksCompleted = metricsRef.current.streaksCompleted
-    let awardedStreakLevel: number | null = null
-    let streakProgressBeforeReset: number | null = null
-
-    if (isCorrect) {
-      const tentativeProgress = currentStreak + 1
-
-      if (tentativeProgress >= streakThreshold) {
-        const nextCompletedTotal = Math.min(updatedStreaksCompleted + 1, maxAwardableStreaks)
-
-        if (nextCompletedTotal > updatedStreaksCompleted) {
-          updatedStreaksCompleted = nextCompletedTotal
-          setStreaksCompleted(nextCompletedTotal)
-          awardedStreakLevel = nextCompletedTotal
-          streakProgressBeforeReset = tentativeProgress
-        }
-
-        updatedStreakProgress = tentativeProgress - streakThreshold
-      } else {
-        updatedStreakProgress = tentativeProgress
-      }
-    } else {
-      updatedStreakProgress = Math.max(0, currentStreak - streakDecrement)
-    }
+    const updatedQuestionsAnswered = stats.questionsAnswered
+    const updatedCorrectAnswers = stats.correctAnswers
+    const updatedStreakProgress = stats.streakProgress
+    const updatedStreaksCompleted = stats.streaksCompleted
+    const awardedStreakLevel = ruleResult.awardedStreakLevel
+    const streakProgressBeforeReset = ruleResult.streakProgressBeforeReset
 
     setQuestionsAnswered(updatedQuestionsAnswered)
     setCorrectAnswers(updatedCorrectAnswers)
+    setStreaksCompleted(updatedStreaksCompleted)
     setCurrentStreak(updatedStreakProgress)
 
-    metricsRef.current = {
-      questionsAnswered: updatedQuestionsAnswered,
-      correctAnswers: updatedCorrectAnswers,
-      streaksCompleted: updatedStreaksCompleted,
-      heartsRemaining: heartsAfterAnswer,
-    }
+    metricsRef.current = stats
 
     if (isCorrect) {
       if (awardedStreakLevel !== null) {
@@ -530,7 +509,7 @@ export default function PlayingPage() {
           {
             sessionId,
             streakLevel: awardedStreakLevel,
-            currentStreak: streakProgressBeforeReset ?? streakThreshold,
+            currentStreak: streakProgressBeforeReset ?? gameConfig.streak.threshold,
             streakProgressAfterReset: updatedStreakProgress,
             heartsRemaining: heartsAfterAnswer,
           },
@@ -567,7 +546,10 @@ export default function PlayingPage() {
         setCurrentQuestionIndex(nextIndex)
       }
 
-      correctAnswerTimeoutRef.current = window.setTimeout(advanceAfterHalo, 500)
+      correctAnswerTimeoutRef.current = window.setTimeout(
+        advanceAfterHalo,
+        gameConfig.feedback.correctAnswerHaloMilliseconds,
+      )
 
       return
     }
@@ -643,7 +625,6 @@ export default function PlayingPage() {
     setHearts,
     setGameOverReason,
     setScore,
-    currentStreak,
     setCurrentStreak,
     setQuestionsAnswered,
     setCorrectAnswers,

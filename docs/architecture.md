@@ -30,7 +30,9 @@ The player flow is registration, pool selection, instructions, gameplay, and res
 | Correct-answer feedback | A 500 ms halo before advancing |
 | End conditions | Time runs out, hearts reach zero, or all questions in the draw are answered |
 
-Settings are defined in `src/config/gameConfig.ts`. The browser owns the timer, hearts, streak progress, and immediate feedback. The backend calculates correctness and score from the saved question and submitted answer.
+Gameplay defaults and pure answer calculations are defined in `rayfin/functions/src/gameRules.ts`. The frontend's `src/config/gameConfig.ts` imports those defaults and adds telemetry and station settings. Change gameplay values in the shared module so browser calculations, server scoring, and completion validation stay aligned.
+
+The browser owns the timer, hearts, streak progress, and immediate feedback. The backend calculates correctness and score from the saved question and submitted answer. Both use the same pure answer calculation; React scheduling, animation, and persistence remain outside that calculation.
 
 Question draws include the correct answer index so the browser can provide feedback. The application is intended for supervised kiosks, not adversarial or prize-bearing competitions that require hidden answers and server-controlled timing.
 
@@ -41,6 +43,8 @@ The Fabric operator authenticates the browser. Attendee registration creates or 
 The same operator session is used for gameplay and question loading. There is no separate question-administrator role.
 
 Application entities deny direct browser reads and writes through the Data API. Authenticated Functions access SQL using the Functions host's SQL-audience token and parameterized `tedious` queries. SQL connection settings are backend secrets.
+
+The SQL implementation provides native transactions and locking across several statements. A replacement data-access implementation must retain atomic imports, serialized session writes, replayable results, and the private entity policies. Typed single-entity queries and mutations alone do not satisfy those requirements.
 
 ## Data model
 
@@ -67,6 +71,7 @@ Entity definitions are registered in `rayfin/data/schema.ts`. The root package e
 | `listPools`           | List active pools                                  |
 | `getPool`             | Resolve a pool by slug                             |
 | `createPool`          | Create a display pool                              |
+| `previewQuestionImport` | Validate a CSV and show pool destinations and previous imports without writing |
 | `importQuestions`     | Validate and atomically save a CSV import          |
 | `startSession`        | Create a session and its draw                      |
 | `getSessionQuestions` | Retrieve the complete saved draw                   |
@@ -82,13 +87,15 @@ Session and import requests retain their identifiers across retries. Accepted an
 
 Per-session SQL locks serialize answers and completion. The frontend waits for pending answers before requesting completion. The backend returns retryable `SESSION_NOT_READY` when the requested completion counters are not yet persisted.
 
-Imports validate all rows before committing. Repeating an import identifier with the same content does not create another copy; selecting a file again creates a new additive import. New imports do not change existing session draws.
+Imports validate all rows before committing. The operator preview shows destination counts, missing display pools, and previous imports of the exact file. Explicitly requested pool creation shares the import transaction. Existing pool metadata is preserved, including pools another operator creates after the preview.
+
+Repeating an import identifier with the same content does not create another copy. Selecting a file again creates a new additive import, but repeated content requires explicit confirmation. A locked backend lookup prevents an unconfirmed duplicate when another import finishes after the preview. This is a warning and confirmation mechanism, not question-level deduplication. New imports do not change existing session draws.
 
 Transactions use the driver's native begin, commit, and rollback methods. Transaction boundaries must not be split across separate `execSql` calls.
 
 ## Runtime limits
 
-The complete application requires Fabric. The localhost frontend cannot authenticate an operator or save games. See [Development](../README.md#development).
+The complete application requires Fabric. The localhost frontend cannot authenticate an operator or save games. Local Functions routing alone does not satisfy this application's operator-authentication requirement. See [Development](../README.md#development).
 
 Active games and pending writes are held in browser memory. Refreshing the page cannot resume them.
 

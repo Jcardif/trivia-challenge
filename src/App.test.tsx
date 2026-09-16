@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { TextEncoder } from 'node:util'
 import { OperationError } from './services/operationError'
 
@@ -54,6 +55,7 @@ jest.unstable_mockModule('./services/analyticsService', () => ({
 const { default: App } = await import('./App')
 const player = { userId: 'player-1', name: 'Fabric learner', email: 'learner@example.com', createdAt: '2026-09-10T00:00:00Z' }
 const pool = { id: 'fabric', name: 'Fabric', iconPath: '/pools/default.svg', isActive: true, displayOrder: 0 }
+const originalFetch = globalThis.fetch
 
 beforeEach(() => {
   authenticated = false
@@ -75,6 +77,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   jest.useRealTimers()
+  globalThis.fetch = originalFetch
 })
 
 async function registerAttendee() {
@@ -263,6 +266,11 @@ describe('ported attendee flow', () => {
     const imports: unknown[] = []
     invoke.mockImplementation(async (name, input) => {
       if (name === 'listPools') return [pool]
+      if (name === 'previewQuestionImport') {
+        if (!input || typeof input !== 'object' || !('importId' in input)) throw new Error('Missing import ID')
+        return { importId: input.importId, questionCount: 1, previousImportCount: 0,
+          pools: [{ slug: pool.id, questionCount: 1, existingPool: pool }] }
+      }
       if (name === 'importQuestions') {
         imports.push(input)
         if (imports.length === 1) throw new Error('Import connection interrupted')
@@ -280,7 +288,7 @@ describe('ported attendee flow', () => {
     // A file at the existing 10 MiB limit must not hit a smaller frontend cap.
     Object.defineProperty(file, 'size', { value: 10 * 1024 * 1024 })
     fireEvent.change(screen.getByLabelText('Question file'), { target: { files: [file] } })
-    await screen.findByText(/Import ID:/)
+    await screen.findByRole('heading', { name: 'Import preview' })
     fireEvent.click(screen.getByRole('button', { name: 'Import questions' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Retry this import' }))
     await screen.findByText('Import complete. 1 question accepted.')
@@ -288,5 +296,111 @@ describe('ported attendee flow', () => {
     expect(imports[0]).toEqual(imports[1])
     expect(screen.getByRole('button', { name: 'Import questions' })).toBeDisabled()
     expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('requires explicit pool creation and duplicate confirmation before an additive import', async () => {
+    authenticated = true
+    invoke.mockImplementation(async (name, input) => {
+      if (name === 'listPools') return []
+      if (!input || typeof input !== 'object' || !('importId' in input)) throw new Error('Missing import ID')
+      if (name === 'previewQuestionImport') return {
+        importId: input.importId, questionCount: 2, previousImportCount: 1,
+        pools: [{ slug: 'demo', questionCount: 2 }, { slug: 'fabric', questionCount: 1, existingPool: pool }],
+      }
+      if (name === 'importQuestions') return {
+        importId: input.importId, acceptedCount: 2, questionIds: ['q1', 'q2'],
+      }
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    window.history.replaceState(null, '', '/questions/load')
+    render(<App />)
+    const file = new File(['csv fixture'], 'questions.csv', { type: 'text/csv' })
+    Object.defineProperty(file, 'text', { value: async () => 'csv fixture' })
+    fireEvent.change(await screen.findByLabelText('Question file'), { target: { files: [file] } })
+    await screen.findByRole('heading', { name: 'Import preview' })
+    expect(screen.getByText(/already been imported 1 time/)).toBeInTheDocument()
+    const submit = screen.getByRole('button', { name: 'Import questions' })
+    expect(submit).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Display name for demo'), { target: { value: 'Demo pool' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Create 1 missing pool/ }))
+    expect(submit).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Add another copy of these questions.' }))
+    fireEvent.click(submit)
+    await screen.findByText('Import complete. 2 questions accepted.')
+    expect(invoke).toHaveBeenCalledWith('importQuestions', expect.objectContaining({
+      csv: 'csv fixture',
+      poolsToCreate: [{ slug: 'demo', name: 'Demo pool', iconPath: '/pools/default.svg' }],
+      allowDuplicateContent: true,
+    }))
+    expect(invoke.mock.calls.filter(([name]) => name === 'createPool')).toHaveLength(0)
+  })
+
+  it('seeds through the same authenticated preview and import without automatic writes', async () => {
+    authenticated = true
+    const csv = readFileSync(new URL('../examples/questions.csv', import.meta.url), 'utf8')
+    const fetchSample = jest.fn(async () => ({ ok: true, text: async () => csv }))
+    Object.defineProperty(globalThis, 'fetch', { value: fetchSample, configurable: true, writable: true })
+    invoke.mockImplementation(async (name, input) => {
+      if (name === 'listPools') return []
+      if (!input || typeof input !== 'object' || !('importId' in input)) throw new Error('Missing import ID')
+      if (name === 'previewQuestionImport') return {
+        importId: input.importId, questionCount: 4, previousImportCount: 0,
+        pools: [{ slug: 'fabric-basics', questionCount: 4 }],
+      }
+      if (name === 'importQuestions') return {
+        importId: input.importId, acceptedCount: 4, questionIds: ['q1', 'q2', 'q3', 'q4'],
+      }
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    window.history.replaceState(null, '', '/questions/load')
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Use sample questions' }))
+    await screen.findByRole('heading', { name: 'Import preview' })
+    expect(fetchSample).toHaveBeenCalledTimes(1)
+    expect(invoke.mock.calls.filter(([name]) => name === 'importQuestions')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('checkbox', { name: /Create 1 missing pool/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Import questions' }))
+    await screen.findByText('Import complete. 4 questions accepted.')
+    expect(invoke).toHaveBeenCalledWith('importQuestions', expect.objectContaining({
+      csv, poolsToCreate: [{ slug: 'fabric-basics', name: 'fabric basics', iconPath: '/pools/default.svg' }],
+      allowDuplicateContent: false,
+    }))
+  })
+
+  it('refreshes a stale preview after another import, retaining the identity until explicit confirmation', async () => {
+    authenticated = true
+    let previews = 0
+    let imports = 0
+    invoke.mockImplementation(async (name, input) => {
+      if (name === 'listPools') return [pool]
+      if (!input || typeof input !== 'object' || !('importId' in input)) throw new Error('Missing import ID')
+      if (name === 'previewQuestionImport') return {
+        importId: input.importId, questionCount: 1, previousImportCount: previews++,
+        pools: [{ slug: 'fabric', questionCount: 1, existingPool: pool }],
+      }
+      if (name === 'importQuestions') {
+        if (imports++ === 0) throw new OperationError('This file has already been imported.', 'DUPLICATE_IMPORT', false)
+        return { importId: input.importId, acceptedCount: 1, questionIds: ['q1'] }
+      }
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    window.history.replaceState(null, '', '/questions/load')
+    render(<App />)
+    const file = new File(['csv'], 'questions.csv')
+    Object.defineProperty(file, 'text', { value: async () => 'csv' })
+    fireEvent.change(await screen.findByLabelText('Question file'), { target: { files: [file] } })
+    await screen.findByRole('heading', { name: 'Import preview' })
+    fireEvent.click(screen.getByRole('button', { name: 'Import questions' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Review this import again' }))
+    await screen.findByText(/already been imported 1 time/)
+    expect(screen.getByRole('button', { name: 'Import questions' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Add another copy of these questions.' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Import questions' }))
+    await screen.findByText('Import complete. 1 question accepted.')
+    const requests = invoke.mock.calls.filter(([name]) => name === 'importQuestions').map(([, input]) => input)
+    expect(requests).toHaveLength(2)
+    const firstRequest = requests[0]
+    if (!firstRequest || typeof firstRequest !== 'object') throw new Error('Missing first request')
+    expect(requests[1]).toEqual({ ...firstRequest, allowDuplicateContent: true })
   })
 })

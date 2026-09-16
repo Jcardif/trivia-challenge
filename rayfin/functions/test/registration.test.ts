@@ -8,6 +8,7 @@ const operations: Record<keyof OperationMap, true> = {
   listPools: true,
   getPool: true,
   createPool: true,
+  previewQuestionImport: true,
   importQuestions: true,
   startSession: true,
   getSessionQuestions: true,

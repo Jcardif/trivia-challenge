@@ -49,7 +49,7 @@ export async function runApplicationAcceptance(invoke: AuthenticatedAppInvoker):
   ])
   check(imported.acceptedCount === 101, 'import count')
   check(JSON.stringify(imported) === JSON.stringify(importReplay), 'import retry changed question identities')
-  const additive = await call('importQuestions', { ...importRequest, importId: crypto.randomUUID() })
+  const additive = await call('importQuestions', { ...importRequest, importId: crypto.randomUUID(), allowDuplicateContent: true })
   check(!additive.questionIds.some((id) => imported.questionIds.includes(id)), 'separate import must be additive')
   const importConflict = await invoke('importQuestions', { ...importRequest, csv: csv + '\n' })
   check(!importConflict.success && importConflict.code === 'CONFLICT', 'importId cannot identify different input')

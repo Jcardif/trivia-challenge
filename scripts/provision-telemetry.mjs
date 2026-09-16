@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { parseArgs } from 'node:util'
 import { createFabricApi, createKustoQueryApi, requireUuid } from './fabric-api.mjs'
+import { resolveDeploymentTarget } from './deployment-target.mjs'
 
 const { values } = parseArgs({
   options: {
@@ -13,14 +14,16 @@ const { values } = parseArgs({
     'station-id': { type: 'string' },
   },
 })
-const workspaceId = requireUuid(values['workspace-id'], 'workspace-id')
+const target = await resolveDeploymentTarget({ workspaceId: values['workspace-id'] })
+const { workspaceId } = target
 const sessionId = values['session-id'] ? requireUuid(values['session-id'], 'session-id') : ''
 const stationId = values['station-id'] ?? ''
 if (values.apply && values.verify) throw new Error('Use either --apply or read-only --verify, not both.')
 let appOrigin
 if (values.verify) {
-  if (!values['app-origin']) throw new Error('--verify requires the deployed HTTPS --app-origin.')
-  const origin = new URL(values['app-origin'])
+  const appOriginValue = values['app-origin'] ?? target.hostingUrl
+  if (!appOriginValue) throw new Error('--verify requires the deployed HTTPS --app-origin or an active deployment hostingUrl.')
+  const origin = new URL(appOriginValue)
   if (origin.protocol !== 'https:' || origin.username || origin.password ||
     origin.pathname !== '/' || origin.search || origin.hash) {
     throw new Error('--verify requires the deployed HTTPS --app-origin without a path, query, or fragment.')
@@ -35,9 +38,12 @@ const names = {
 }
 
 if (!values.apply && !values.verify) {
-  console.log(JSON.stringify({ workspaceId, ...names, apply: false }, null, 2))
+  console.log(JSON.stringify({
+    deployment: target.deploymentKey, fabricApiUrl: target.fabricApiUrl,
+    workspaceId, ...names, apply: false,
+  }, null, 2))
 } else {
-  const api = await createFabricApi()
+  const api = await createFabricApi({ target })
   const base = `workspaces/${workspaceId}`
   const marker = 'Microsoft Fabric Trivia Challenge Rayfin migration'
   const items = await api.list(`${base}/items`)
@@ -143,7 +149,7 @@ if (!values.apply && !values.verify) {
       if (databaseDetails.properties?.parentEventhouseItemId !== eventhouse.id) {
         throw new Error('The owned telemetry database belongs to a different Eventhouse.')
       }
-      const queryApi = await createKustoQueryApi(databaseDetails.properties.queryServiceUri)
+      const queryApi = await createKustoQueryApi(databaseDetails.properties.queryServiceUri, { target })
       const csl = await readFile(new URL('../infra/telemetry-verify.kql', import.meta.url), 'utf8')
       summary.queryResults = await queryApi.query(database.displayName, csl, { appOrigin, sessionId, stationId })
       const eventCount = summary.queryResults.reduce((count, table) => {

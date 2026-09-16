@@ -1,7 +1,7 @@
 import { AudienceType, UserDataFunctions, type RayfinContext } from '@microsoft/fabric-user-data-functions'
 import { functionResult } from './errors.js'
 import { registerPlayer } from './players.js'
-import { createPool, getPool, importQuestions, listPools } from './questions.js'
+import { createPool, getPool, importQuestions, listPools, previewQuestionImport } from './questions.js'
 import { endSession, getSessionQuestions, startSession, submitAnswer } from './sessions.js'
 import { trackTelemetryBatch } from './telemetry.js'
 
@@ -25,6 +25,10 @@ udf.func('createPool', async (ctx: RayfinContext, payload: string): Promise<stri
 
 udf.func('importQuestions', async (ctx: RayfinContext, payload: string): Promise<string> =>
   functionResult(payload, (input) => importQuestions(ctx, input)),
+[udf.connection({ audienceType: AudienceType.Sql })])
+
+udf.func('previewQuestionImport', async (ctx: RayfinContext, payload: string): Promise<string> =>
+  functionResult(payload, (input) => previewQuestionImport(ctx, input)),
 [udf.connection({ audienceType: AudienceType.Sql })])
 
 udf.func('startSession', async (ctx: RayfinContext, payload: string): Promise<string> =>

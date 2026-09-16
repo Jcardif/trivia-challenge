@@ -5,7 +5,7 @@ import type {
 } from './contracts.js'
 import { DomainError } from './errors.js'
 import {
-  initialStats, replayAnswer, scoreAnswer, seededRandom, shuffle, shuffleChoices,
+  accuracyPercentage, applyAnswerRules, initialStats, replayAnswer, seededRandom, shuffle, shuffleChoices,
   summarizeAnswers, verifyEndCounters, verifyStartReplay, type GameStats,
 } from './game.js'
 import {
@@ -46,7 +46,7 @@ function endDto(sessionId: string, stats: GameStats, gameOverReason?: string): E
     finalScore: stats.totalScore,
     questionsAnswered: stats.questionsAnswered,
     correctAnswers: stats.correctAnswers,
-    accuracy: stats.questionsAnswered ? stats.correctAnswers / stats.questionsAnswered * 100 : 0,
+    accuracy: accuracyPercentage(stats.correctAnswers, stats.questionsAnswered),
     streaksCompleted: stats.streaksCompleted,
     heartsRemaining: stats.heartsHalfUnits / 2,
     gameOverReason,
@@ -189,8 +189,9 @@ export async function submitAnswer(ctx: RayfinContext, value: unknown): Promise<
     )
     if (!question) throw new DomainError('NOT_FOUND', 'Question not found in this session.')
     const correct = input.answerIndex === rowNumber(question, 'correctAnswerIndex')
-    const stats = scoreAnswer(sessionStats(session), correct)
-    const pointsEarned = correct ? 10 : 0
+    const result = applyAnswerRules(sessionStats(session), correct)
+    const stats = result.stats
+    const pointsEarned = result.pointsEarned
     await transaction.insert('GameSessionAnswers',
       ['id', 'submissionKey', 'session_id', 'question_id', 'ordinal', 'answerIndex', 'isCorrect',
         'pointsEarned', 'totalScoreAfter', 'timeElapsed', 'timestamp'],

@@ -44,7 +44,9 @@ Follow [Deploy the application](docs/deployment.md) to create the app, provision
 
 Open the deployed app and select **Sign in operator with Fabric**. After signing in, open **Operator setup** and select **Load questions and create pools**.
 
-Use [examples/questions.csv](examples/questions.csv) as a starting point. The [Excel and CSV guide](docs/questions.md) defines every column, explains the correct-answer numbering, and walks through saving and importing the file.
+Select **Use sample questions** to preview the bundled four-question example, or choose your own CSV file. Confirm any missing pools and then select **Import questions**. The sample and file upload use the same authenticated, transactional importer.
+
+Use [examples/questions.csv](examples/questions.csv) as a starting point for your own question bank. The [Excel and CSV guide](docs/questions.md) defines every column, explains the correct-answer numbering, and walks through the destination preview and duplicate-file confirmation.
 
 ### 4. Run the challenge
 

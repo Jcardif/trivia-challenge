@@ -5,7 +5,7 @@ import { OperationError } from './operationError'
 import type {
   GameSession, SessionQuestion, SubmitAnswerRequest, SubmitAnswerResponse,
   EndSessionRequest, EndSessionResponse, QuestionPool, CreatePoolInput,
-  ImportQuestionsInput, ImportQuestionsResponse,
+  ImportQuestionsInput, ImportQuestionsResponse, ImportQuestionsPreview,
 } from '../types/api'
 
 export const sessionService = {
@@ -27,6 +27,11 @@ export const sessionService = {
   async importQuestions(input: ImportQuestionsInput): Promise<ImportQuestionsResponse> {
     ensureStationAccess()
     return invokeOperation('importQuestions', input)
+  },
+
+  async previewQuestionImport(input: Pick<ImportQuestionsInput, 'importId' | 'csv'>): Promise<ImportQuestionsPreview> {
+    ensureStationAccess()
+    return invokeOperation('previewQuestionImport', input)
   },
 
   async start(sessionId: string, userId: string, poolId?: string): Promise<GameSession> {

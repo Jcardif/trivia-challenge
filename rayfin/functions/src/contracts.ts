@@ -151,6 +151,19 @@ export interface CreatePoolInput {
 export interface ImportQuestionsInput {
   importId: string
   csv: string
+  poolsToCreate?: CreatePoolInput[]
+  allowDuplicateContent?: boolean
+}
+
+export interface ImportQuestionsPreview {
+  importId: string
+  questionCount: number
+  previousImportCount: number
+  pools: Array<{
+    slug: string
+    questionCount: number
+    existingPool?: QuestionPool
+  }>
 }
 
 export interface ImportQuestionsResponse {
@@ -181,6 +194,10 @@ export interface OperationMap {
   listPools: { input: Record<string, never>; output: QuestionPool[] }
   getPool: { input: { slug: string }; output: QuestionPool }
   createPool: { input: CreatePoolInput; output: QuestionPool }
+  previewQuestionImport: {
+    input: Pick<ImportQuestionsInput, 'importId' | 'csv'>
+    output: ImportQuestionsPreview
+  }
   importQuestions: { input: ImportQuestionsInput; output: ImportQuestionsResponse }
   startSession: {
     input: { sessionId: string; userId: string; poolId?: string }

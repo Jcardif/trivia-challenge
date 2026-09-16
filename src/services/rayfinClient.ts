@@ -85,6 +85,7 @@ async function initializeConnection(): Promise<OperatorConnection> {
       listPools: input => client.functions.listPools.invoke(input),
       getPool: input => client.functions.getPool.invoke(input),
       createPool: input => client.functions.createPool.invoke(input),
+      previewQuestionImport: input => client.functions.previewQuestionImport.invoke(input),
       importQuestions: input => client.functions.importQuestions.invoke(input),
       startSession: input => client.functions.startSession.invoke(input),
       getSessionQuestions: input => client.functions.getSessionQuestions.invoke(input),

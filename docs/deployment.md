@@ -39,11 +39,11 @@ Replace each value in angle brackets with a value from your environment.
 | Variable | Where to find it |
 | --- | --- |
 | `TENANT_ID` | Your Microsoft Entra tenant's **Tenant ID**, available from the tenant overview or your administrator. |
-| `WORKSPACE_ID` | The workspace identifier after `/groups/` in its Fabric portal URL. |
+| `WORKSPACE_URI` | The full Fabric portal URL for the target workspace. Use the portal host for the environment you intend to deploy to, such as `https://app.fabric.microsoft.com/groups/<workspace-id>/...` for production or `https://daily.fabric.microsoft.com/groups/<workspace-id>/...` for Daily. |
 
 ```bash
 export TENANT_ID="<your-tenant-id>"
-export WORKSPACE_ID="<your-workspace-id>"
+export WORKSPACE_URI="<your-fabric-workspace-url>"
 npx rayfin login --tenant "$TENANT_ID" --select
 npx rayfin login status
 ```
@@ -52,40 +52,44 @@ Confirm that the reported account and tenant are the intended deployment identit
 
 For a new environment, use a fresh checkout without another environment's `.env.local`, `rayfin/.env`, or `rayfin/.deployments.json`. Review `services.auth.allowedRedirectUris` in `rayfin/rayfin.yml` and remove origins that do not belong to the deployment. The CLI adds the new hosting origin during deployment.
 
+Rayfin records each deployment in the ignored `rayfin/.deployments.json` registry. The top-level `active` value selects the entry used by the helper scripts below. Use `npx rayfin up list` to view recorded deployments and `npx rayfin up switch <workspace>` to change the active one before configuring analytics or backend secrets.
+
 ## 3. Deploy the application
 
 ```bash
 RAYFIN_FEATURE_FLAGS=functions npx rayfin up \
   --tenant "$TENANT_ID" \
-  --workspace-id "$WORKSPACE_ID"
+  --workspace-uri "$WORKSPACE_URI"
 npx rayfin up status
 ```
 
-The `functions` flag enables the Functions deployment workflow in the pinned CLI. The deployment builds the frontend and Functions, applies the SQL schema, and records its configuration in `rayfin/.deployments.json`.
+The `functions` flag enables the Functions deployment workflow in the pinned CLI. The workspace URI lets Rayfin derive both the workspace ID and Fabric API environment. The deployment builds the frontend and Functions, applies the SQL schema, and records its configuration in `rayfin/.deployments.json`.
+
+Use a `*.fabric.microsoft.com` workspace URL, not a `*.powerbi.com` URL. For example, a workspace opened through `daily.powerbi.com` can be targeted with `https://daily.fabric.microsoft.com/groups/<workspace-id>/list`. Tenant selection and environment selection are separate.
 
 Record the following values for later steps:
 
 | Variable | Where to find it |
 | --- | --- |
-| `APP_ID` | `fabricItemId` in the active entry of `rayfin/.deployments.json`. The top-level `active` value selects the entry in `deployments`. |
 | `APP_ORIGIN` | `hostingUrl` in that same entry. Use the HTTPS origin without a path, query string, or trailing slash. |
 | `SQL_DATABASE_ID` | Open the deployed application's SQL child item in Fabric and copy that item's identifier from its URL. Use the application-owned SQL database, not another database in the workspace. |
 
 ```bash
-export APP_ID="<deployed-application-id>"
 export APP_ORIGIN="<deployed-https-origin>"
 export SQL_DATABASE_ID="<application-sql-database-id>"
 ```
 
-The app is not ready for players yet. Its backend secrets and analytics resources are configured next.
+The app is not ready for players yet. Its backend secrets and analytics resources are configured next. The scripts read workspace ID, tenant ID, application ID, Fabric API URL, and hosting URL from the active deployment registry entry. Optional `--workspace-id` and `--app-id` arguments are safety checks only; they must match the active deployment.
+
+The helpers derive the Fabric REST environment from the entry's `fabricDeepLink`. The registry's `fabricApiUrl` normally identifies the app's regional workload endpoint, not the Fabric REST root. Do not replace it with `https://api.fabric.microsoft.com/v1`. For legacy entries without a portal link, the helpers accept a first-party REST endpoint or use production when the API URL is also absent.
 
 ## 4. Provision analytics
 
-Preview the resource names, then create the resources:
+Preview the selected environment, workspace, and resource names, then create the resources:
 
 ```bash
-node scripts/provision-telemetry.mjs --workspace-id "$WORKSPACE_ID"
-node scripts/provision-telemetry.mjs --workspace-id "$WORKSPACE_ID" --apply
+node scripts/provision-telemetry.mjs
+node scripts/provision-telemetry.mjs --apply
 ```
 
 The script creates these items:
@@ -111,13 +115,11 @@ The script reuses resources that it owns. It refuses name collisions with unrela
 
 ```bash
 node scripts/configure-backend.mjs \
-  --workspace-id "$WORKSPACE_ID" \
-  --app-id "$APP_ID" \
   --sql-database-id "$SQL_DATABASE_ID" \
   --eventstream-id "$EVENTSTREAM_ID"
 ```
 
-The script confirms that the application matches the active deployment registry, resolves the SQL connection information and Eventstream publisher credential, and writes these values to the backend secret store:
+The script uses the active Rayfin deployment registry entry, verifies the sign-in tenant matches that entry, resolves the SQL connection information and Eventstream publisher credential, and writes these values to the backend secret store:
 
 | Setting | Purpose |
 | --- | --- |
@@ -140,9 +142,9 @@ The deployment is ready for a kiosk when registration, question loading, saved r
 
 ## Update an existing deployment
 
-Keep that environment's private deployment files. Sign in to its tenant, set `TENANT_ID` and `WORKSPACE_ID`, and run the full deployment command from step 3. This applies code, configuration, and schema changes together.
+Keep that environment's private deployment files. Sign in to its tenant, set `TENANT_ID` and `WORKSPACE_URI`, and run the full deployment command from step 3. This applies code, configuration, and schema changes together.
 
-Use a separate checkout for another tenant or environment. Do not copy one environment's private deployment files into another.
+Use `npx rayfin up switch <workspace>` before running the telemetry and backend helper scripts if the checkout records more than one deployment. Use a separate checkout for another tenant or environment. Do not copy one environment's private deployment files into another.
 
 Review any destructive schema change before using `--force`. Routine deployment does not require it.
 
@@ -153,7 +155,10 @@ Review any destructive schema change before using `--force`. Routine deployment 
 | `npx rayfin` reports npm E404 for `rayfin` | Run [Install dependencies and the CLI](#1-install-dependencies-and-the-cli) from the repository root. The required package is `@microsoft/rayfin-cli`, and development dependencies must be included. |
 | Package installation fails | Check access to `https://registry.npmjs.org/` and the exact package version in the lockfile. Do not change dependency versions to bypass the error. |
 | Rayfin or a required workload is unavailable | Ask the tenant administrator to confirm preview access, capacity settings, region support, and your permissions. |
-| Backend configuration reports a registry mismatch | Compare the supplied tenant, workspace, and app with the active entry in `rayfin/.deployments.json`. |
+| Backend configuration reports a registry mismatch | Compare the supplied tenant, workspace, app, and selected Rayfin deployment with the active entry in `rayfin/.deployments.json`. |
+| A helper reports that no active deployment is selected | Run `npx rayfin up list`, then `npx rayfin up switch <workspace>` to select the intended registry entry. |
+| A helper refuses the Fabric API URL | Redeploy or switch to the intended workspace to refresh its registry entry. Confirm that `fabricDeepLink` identifies the correct Fabric environment, workspace, and app. Do not replace a regional workload URL with a REST API URL. |
+| A helper reports a tenant mismatch | Run `npx rayfin login --tenant <deployment-tenant-id>` for the active deployment before configuring analytics or backend secrets. |
 | Question imports or registration fail with SQL errors | Confirm that `SQL_DATABASE_ID` belongs to this app and that step 5 completed. |
 | Telemetry destination is not running | Inspect the Eventstream destination in Fabric and follow the [telemetry guide](telemetry-events.md#confirm-delivery). |
 | Localhost reports unsupported Fabric sign-in | Use the deployed hosting URL. Local gameplay is not supported. |

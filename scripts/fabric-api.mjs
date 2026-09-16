@@ -1,17 +1,17 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { getRayfinAuth } from '../node_modules/@microsoft/rayfin-cli/dist/auth/index.js'
+import { getRayfinAuth, loadAuthState } from '../node_modules/@microsoft/rayfin-cli/dist/auth/index.js'
+import {
+  assertDeploymentTenant,
+  requireUuid,
+  resolveDeploymentTarget,
+  resolveFabricApiRequestUrl,
+} from './deployment-target.mjs'
 
-const apiRoot = 'https://api.fabric.microsoft.com/v1/'
+export { requireUuid } from './deployment-target.mjs'
 
-export function requireUuid(value, label) {
-  if (typeof value !== 'string' ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
-    throw new Error(`${label} must be a UUID.`)
-  }
-  return value
-}
-
-export async function createFabricApi() {
+export async function createFabricApi(options = {}) {
+  const target = options.target ?? await resolveDeploymentTarget(options)
+  assertDeploymentTenant(target, await loadAuthState())
   const auth = await getRayfinAuth()
   const authorization = async () => {
     const { token } = await auth.acquireToken(undefined, { silentOnly: true })
@@ -19,10 +19,7 @@ export async function createFabricApi() {
   }
 
   async function request(path, options = {}) {
-    const url = new URL(path, apiRoot)
-    if (url.origin !== new URL(apiRoot).origin || !url.pathname.startsWith('/v1/')) {
-      throw new Error('Refusing to send Fabric credentials to an unexpected endpoint.')
-    }
+    const url = resolveFabricApiRequestUrl(path, target.fabricApiUrl)
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const response = await fetch(url, {
         ...options,
@@ -79,6 +76,7 @@ export async function createFabricApi() {
   }
 
   return {
+    target,
     authorization,
     request,
     list,
@@ -89,7 +87,8 @@ export async function createFabricApi() {
   }
 }
 
-export async function createKustoQueryApi(queryServiceUri) {
+export async function createKustoQueryApi(queryServiceUri, options = {}) {
+  if (options.target) assertDeploymentTenant(options.target, await loadAuthState())
   const endpoint = new URL(queryServiceUri)
   if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.port ||
     endpoint.pathname !== '/' || endpoint.search || endpoint.hash ||

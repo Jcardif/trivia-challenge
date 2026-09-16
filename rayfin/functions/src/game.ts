@@ -1,42 +1,12 @@
 import type { EndSessionRequest, SubmitAnswerRequest, SubmitAnswerResponse } from './contracts.js'
 import { DomainError } from './errors.js'
+import type { GameStats } from './gameRules.js'
 
-export interface GameStats {
-  totalScore: number
-  questionsAnswered: number
-  correctAnswers: number
-  streaksCompleted: number
-  streakProgress: number
-  heartsHalfUnits: number
-}
-
-export function initialStats(): GameStats {
-  return {
-    totalScore: 0, questionsAnswered: 0, correctAnswers: 0,
-    streaksCompleted: 0, streakProgress: 0, heartsHalfUnits: 10,
-  }
-}
-
-export function scoreAnswer(stats: GameStats, correct: boolean): GameStats {
-  let progress = correct ? stats.streakProgress + 1 : Math.max(0, stats.streakProgress - 1)
-  let completed = stats.streaksCompleted
-  if (progress >= 5) {
-    completed = Math.min(5, completed + 1)
-    progress -= 5
-  }
-  return {
-    totalScore: stats.totalScore + (correct ? 10 : 0),
-    questionsAnswered: stats.questionsAnswered + 1,
-    correctAnswers: stats.correctAnswers + (correct ? 1 : 0),
-    streaksCompleted: completed,
-    streakProgress: progress,
-    heartsHalfUnits: Math.max(0, stats.heartsHalfUnits - (correct ? 0 : 1)),
-  }
-}
-
-export function summarizeAnswers(correctness: readonly boolean[]): GameStats {
-  return correctness.reduce(scoreAnswer, initialStats())
-}
+export {
+  accuracyPercentage, applyAnswerRules, GAME_RULE_DEFAULTS, halfUnitsToHearts, heartsToHalfUnits,
+  initialStats, scoreAnswer, summarizeAnswers, timeRemainingAfterAnswer, type AppliedAnswerRules,
+  type GameRuleSettings, type GameStats,
+} from './gameRules.js'
 
 export function verifyEndCounters(input: EndSessionRequest, stats: GameStats, allowPending = true): void {
   if (allowPending && input.questionsAnswered > stats.questionsAnswered) {
