@@ -131,9 +131,9 @@ The output lists configured setting names without exposing their values. SQL use
 
 ## 6. Load questions and run a game
 
-1. Open the hosting URL from step 3.
+1. Open `/operator` on the hosting URL from step 3.
 2. Select **Sign in operator with Fabric** and complete sign-in.
-3. Open **Operator setup**, then select **Load questions and create pools**.
+3. On the operator setup page, select **Load questions and create pools**. Bookmark `/operator` for staff; attendee screens have no operator setup button.
 4. Follow the [question import guide](questions.md). No questions or pools are created at startup.
 5. Return to registration, complete a game, and wait for its saved result.
 6. Follow [Confirm telemetry delivery](telemetry-events.md#confirm-delivery) to check that the game events reached Eventhouse.

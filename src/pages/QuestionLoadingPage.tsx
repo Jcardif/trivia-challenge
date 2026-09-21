@@ -195,7 +195,10 @@ export default function QuestionLoadingPage() {
         <Header />
         <h1 className="mt-6 text-center text-3xl font-semibold">Load questions</h1>
         <p className="mx-auto mt-3 max-w-2xl text-center text-white/65">Create pools and add questions from a CSV file. Existing questions are kept. This uses the kiosk operator's Fabric session.</p>
-        {!importBusy && !creatingPool && <Link to="/signin" className="mt-6 inline-block text-amber-200 underline">Back to attendee registration</Link>}
+        {!importBusy && !creatingPool && <div className="mt-6 flex flex-wrap gap-5 text-amber-200">
+          <Link to="/operator" className="underline">Back to operator setup</Link>
+          <Link to="/signin" className="underline">Back to attendee registration</Link>
+        </div>}
         {lockdown && <p className="mt-5 rounded-xl border border-red-400/40 p-4 text-red-200" role="alert">{getStationLockdownMessage()}</p>}
         <div className="mt-7 grid items-start gap-7 md:grid-cols-2">
           <section className="rounded-3xl border border-amber-200/20 bg-white/5 p-7">

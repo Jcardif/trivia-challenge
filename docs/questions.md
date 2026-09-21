@@ -78,8 +78,8 @@ When editing CSV directly, enclose a cell in double quotes if it contains commas
 
 ## 3. Create the pool and import
 
-1. Open the deployed app and sign in as the Fabric operator.
-2. Open **Operator setup**, then **Load questions and create pools**.
+1. Open `https://<your-app-host>/operator` and sign in as the Fabric operator if prompted.
+2. Select **Load questions and create pools**. Operator setup is available at `/operator`, not through an attendee-facing button.
 3. Under **Import a CSV**, select the saved `.csv` file. To seed a new deployment with the bundled example, select **Use sample questions** instead.
 4. Read **Import preview**. It shows the total question count, every destination slug, and the number of questions assigned to each pool. A question assigned to several pools counts once in the total and once under each destination.
 5. For missing pools, enter the display names and select the checkbox to create them. For the sample, the slug is `fabric-basics`; use `Fabric basics` as its display name. These pools use the included default icon.

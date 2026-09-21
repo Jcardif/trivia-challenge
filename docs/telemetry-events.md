@@ -44,7 +44,7 @@ The backend validates known event/type pairs, UUIDs, timestamps, and bounded JSO
 
 Delivery is at least once. Deduplicate reports by `eventId`; the `TriviaEvents()` KQL function in [infra/telemetry.kql](../infra/telemetry.kql) does this. Queued events survive attendee reset in the same tab, but not tab closure or refresh. Offline delivery and page shutdown remain best effort.
 
-**Operator setup** reports queued, acknowledged, and dropped counts with the last failure. An acknowledgment confirms forwarding, not Eventhouse ingestion. An empty queue does not by itself prove that events arrived.
+The operator page at `/operator` reports queued, acknowledged, and dropped counts with the last failure. Finish and save the current game before navigating there. An acknowledgment confirms forwarding, not Eventhouse ingestion. An empty queue does not by itself prove that events arrived.
 
 ## Confirm delivery
 

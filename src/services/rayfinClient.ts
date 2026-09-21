@@ -1,5 +1,5 @@
 import { RayfinClient, resolveRayfinConfig } from '@microsoft/rayfin-client'
-import { ensureSignedInWithFabric, type FabricAuthOptions } from '@microsoft/rayfin-auth-provider-fabric'
+import { ensureSignedInWithFabric, initiateFabricLogin, type FabricAuthOptions } from '@microsoft/rayfin-auth-provider-fabric'
 import type { AppFunctionsSchema, FunctionResult, OperationMap } from '../types/api'
 import { OperationError } from './operationError'
 import { operationResponseValidators, validValidationErrors } from './operationResponses'
@@ -104,9 +104,13 @@ async function initializeConnection(): Promise<OperatorConnection> {
 
 // The caller must invoke this directly in its click handler, before any await.
 export function signInOperator(readyConnection: OperatorConnection): Promise<void> {
-  return ensureSignedInWithFabric(readyConnection.client.auth, readyConnection.fabricOptions)
-    .then(session => {
-      if (!session.isAuthenticated) {
+  // A rejected session must reach the broker instead of being reused by the SDK's fast path.
+  const signIn = authenticationFailure
+    ? initiateFabricLogin(readyConnection.client.auth, readyConnection.fabricOptions)
+    : ensureSignedInWithFabric(readyConnection.client.auth, readyConnection.fabricOptions)
+  return signIn
+    .then(() => {
+      if (!readyConnection.client.auth.getSession().isAuthenticated) {
         throw new OperationError('Fabric did not establish an operator session.', 'OPERATOR_SIGN_IN_REQUIRED', false)
       }
       reportAuthenticationFailure(null)
@@ -148,7 +152,7 @@ export async function invokeOperation<K extends keyof OperationMap>(
     if (error instanceof OperationError) throw error
     if (error instanceof RayfinClient.errors.NetworkError) {
       if (error.status === 401) {
-        reportAuthenticationFailure('The operator session was rejected. Sign out the operator, then sign in again. Keep this tab open to retry pending writes.')
+        reportAuthenticationFailure('The operator session was rejected. Sign in again with Fabric. Keep this tab open to retry pending writes.')
         throw new OperationError('The operator session needs to be renewed.', 'OPERATOR_SIGN_IN_REQUIRED', false)
       }
       throw new OperationError(

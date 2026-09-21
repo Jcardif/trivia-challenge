@@ -11,6 +11,22 @@ Complete [deployment](deployment.md) and [question import](questions.md) before 
 
 The operator signs in once per browser session. Attendees use the registration form and do not need Fabric accounts.
 
+## Open operator setup
+
+Open this address directly or bookmark it for staff:
+
+```text
+https://<your-app-host>/operator
+```
+
+The operator page contains Fabric sign-in/sign-out, **Load questions and create pools**, and telemetry delivery status. Select **Continue to the challenge** to return to attendee registration or the current result. The question-loading page also has a **Back to operator setup** link.
+
+Attendee screens have no operator setup button or management links. When sign-in is required, they show only the operator sign-in and recovery controls, not imports, sign-out, or telemetry diagnostics.
+
+Finish and save the current game before opening operator setup. In-app navigation to `/operator` or question loading during a game or pending save returns to the active game or results. Entering an address or opening a bookmark reloads the app, so do not do that while a game or save is in progress.
+
+This separates staff tools from attendee screens; it does not add an administrator role or an additional permission check. Anyone using an authorized operator browser session can open `/operator` when no game is pending.
+
 ## Assign a station ID
 
 Add a `stationId` query parameter to the deployed app URL:
@@ -47,7 +63,7 @@ Wait for the result to finish saving, then select **Play Again**. This clears th
 
 Keep the tab open while answers or results are saving. If a save fails, use the retry action in the app. Refreshing or closing the tab loses pending in-memory state; the application cannot resume the game after a refresh.
 
-If the operator session expires, restore sign-in in the same tab, then retry saving. Finish the current game before loading questions or signing out.
+If the operator session expires or a request rejects it, use **Sign in operator with Fabric** in the recovery dialog, then retry saving. The attendee form, game, and pending writes stay in the same tab. Do not navigate to `/operator`, sign out, or reload to recover a pending game.
 
 ## Before opening to attendees
 
@@ -66,7 +82,7 @@ Registration collects attendee information. Confirm your event's privacy notice,
 | An import reports row errors | Follow the [CSV error reference](questions.md#limits-and-errors). |
 | The result is still saving | Keep the tab open. Retry failed writes before handing the station to another player. |
 | Operator authentication expires | Sign in again in the same tab, then retry the pending save. |
-| Telemetry is queued or dropped | Inspect the status in **Operator setup** and follow the [telemetry guide](telemetry-events.md). |
+| Telemetry is queued or dropped | After the current game is saved, open `/operator` to inspect delivery status and follow the [telemetry guide](telemetry-events.md). |
 
 ## Pool artwork
 

@@ -42,6 +42,8 @@ The Fabric operator authenticates the browser. Attendee registration creates or 
 
 The same operator session is used for gameplay and question loading. There is no separate question-administrator role.
 
+Operator management is available directly at `/operator`, without a button on attendee screens. Attendee routes retain a minimal sign-in recovery dialog that keeps the underlying form, game, and pending writes mounted. A rejected session opens a fresh Fabric broker login rather than reusing the rejected session or requiring sign-out. In-app navigation cannot leave a starting or active game, or its unsaved results, to open management tools.
+
 Application entities deny direct browser reads and writes through the Data API. Authenticated Functions access SQL using the Functions host's SQL-audience token and parameterized `tedious` queries. SQL connection settings are backend secrets.
 
 The SQL implementation provides native transactions and locking across several statements. A replacement data-access implementation must retain atomic imports, serialized session writes, replayable results, and the private entity policies. Typed single-entity queries and mutations alone do not satisfy those requirements.
@@ -65,19 +67,19 @@ Entity definitions are registered in `rayfin/data/schema.ts`. The root package e
 
 `rayfin/functions/src/contracts.ts` defines the shared request and response types.
 
-| Operation             | Purpose                                            |
-| --------------------- | -------------------------------------------------- |
-| `registerPlayer`      | Register or retrieve a player                      |
-| `listPools`           | List active pools                                  |
-| `getPool`             | Resolve a pool by slug                             |
-| `createPool`          | Create a display pool                              |
+| Operation | Purpose |
+| --- | --- |
+| `registerPlayer` | Register or retrieve a player |
+| `listPools` | List active pools |
+| `getPool` | Resolve a pool by slug |
+| `createPool` | Create a display pool |
 | `previewQuestionImport` | Validate a CSV and show pool destinations and previous imports without writing |
-| `importQuestions`     | Validate and atomically save a CSV import          |
-| `startSession`        | Create a session and its draw                      |
-| `getSessionQuestions` | Retrieve the complete saved draw                   |
-| `submitAnswer`        | Score and save an answer                           |
-| `endSession`          | Finalize the session using persisted answer totals |
-| `trackTelemetryBatch` | Validate and forward telemetry                     |
+| `importQuestions` | Validate and atomically save a CSV import |
+| `startSession` | Create a session and its draw |
+| `getSessionQuestions` | Retrieve the complete saved draw |
+| `submitAnswer` | Score and save an answer |
+| `endSession` | Finalize the session using persisted answer totals |
+| `trackTelemetryBatch` | Validate and forward telemetry |
 
 The client sends JSON in a `payload` field. The SDK decodes the `FunctionResult<T>` response; `invokeOperation` returns its data or throws an `OperationError`. Callers must not parse an already-decoded result a second time.
 

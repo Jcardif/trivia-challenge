@@ -14,7 +14,7 @@ function PlayerRoutes() {
   const location = useLocation()
   const navigate = useNavigate()
   const { session, isPlaying, savedSummary } = useGame()
-  const lockedPath = session && !savedSummary ? (isPlaying ? '/playing' : '/results') : null
+  const lockedPath = isPlaying ? '/playing' : session && !savedSummary ? '/results' : null
   useEffect(() => {
     if (lockedPath && location.pathname !== lockedPath) navigate(lockedPath, { replace: true })
   }, [lockedPath, location.pathname, navigate])
@@ -27,6 +27,8 @@ function PlayerRoutes() {
       <Route path="/instructions" element={<InstructionsPage />} />
       <Route path="/playing" element={<PlayingPage />} />
       <Route path="/results" element={<ResultsPage />} />
+      {/* OperatorGate renders this page without unmounting children during sign-in recovery. */}
+      <Route path="/operator" element={null} />
       <Route path="/questions/load" element={<QuestionLoadingPage />} />
       <Route path="/auth/callback" element={<Navigate to="/signin" replace />} />
       <Route path="*" element={<Navigate to="/signin" replace />} />

@@ -42,7 +42,7 @@ Follow [Deploy the application](docs/deployment.md) to create the app, provision
 
 ### 3. Load questions
 
-Open the deployed app and select **Sign in operator with Fabric**. After signing in, open **Operator setup** and select **Load questions and create pools**.
+Open `https://<your-app-host>/operator` and select **Sign in operator with Fabric** if prompted. On the operator setup page, select **Load questions and create pools**. Bookmark `/operator` for staff; attendee screens do not have an operator setup button.
 
 Select **Use sample questions** to preview the bundled four-question example, or choose your own CSV file. Confirm any missing pools and then select **Import questions**. The sample and file upload use the same authenticated, transactional importer.
 
