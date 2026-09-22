@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
+import AdventurerCode from '../components/AdventurerCode'
 import { useGame } from '../context/GameContext'
 import { gameConfig } from '../config/gameConfig'
 import { analytics } from '../services/analyticsService'
@@ -357,6 +358,9 @@ export default function ResultsPage() {
                   </div>
                 </div>
 
+                <div className="mt-8 w-full max-w-lg">
+                  <AdventurerCode code={player.playerCode} />
+                </div>
                 <div className="mt-8 flex items-center justify-center">
                   <button
                     type="button"

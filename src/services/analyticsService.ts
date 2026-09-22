@@ -1,6 +1,8 @@
 import { invokeOperation } from './rayfinClient'
 import { gameConfig } from '../config/gameConfig'
 import { getCookie } from '../lib/utils'
+import { isGeneratedPlayerName } from '../../rayfin/functions/src/playerIdentity'
+import { containsPrivateTelemetryFields } from '../../rayfin/functions/src/telemetryPrivacy'
 import type {
   TelemetryBatchResponse,
   TelemetryEvent,
@@ -133,6 +135,10 @@ function describeElement(target: EventTarget | null): string {
   return `${target.tagName.toLowerCase()}${id}${cls}`
 }
 
+function isPrivateInteraction(target: EventTarget | null): boolean {
+  return target instanceof window.Element && target.closest('[data-telemetry-private]') !== null
+}
+
 export class AnalyticsService {
   private readonly config = gameConfig.telemetry
   private readonly queue: PendingEvent[] = []
@@ -150,6 +156,7 @@ export class AnalyticsService {
   private lastDeliveredAt: string | null = null
   private readonly observers = new Set<DeliveryObserver>()
   private userId?: string
+  private country?: string
   private currentSessionId?: string
   private currentPoolId?: string
   private currentPoolName?: string
@@ -188,6 +195,7 @@ export class AnalyticsService {
 
   identify(user: User | null): void {
     this.userId = user?.userId ?? undefined
+    this.country = user?.country ?? undefined
   }
 
   setSession(sessionId: string | null): void {
@@ -216,6 +224,10 @@ export class AnalyticsService {
         ...(this.userId ? { userId: this.userId } : {}),
         properties: snapshot(properties),
         context: snapshot(this.enrichContext(snapshot(context))),
+      }
+      if (containsPrivateTelemetryFields(item.properties) || containsPrivateTelemetryFields(item.context) ||
+          eventName === 'user.register' && item.properties.name !== undefined && !isGeneratedPlayerName(item.properties.name)) {
+        throw new Error('Private player data cannot be queued for telemetry.')
       }
       bytes = encoder.encode(JSON.stringify(item)).byteLength
     } catch {
@@ -378,10 +390,7 @@ export class AnalyticsService {
       // Query strings and fragments can contain authentication codes or tokens.
       url: `${window.location.origin}${window.location.pathname}`,
       path: window.location.pathname,
-      language: window.navigator.language,
-      userAgent: window.navigator.userAgent,
-      viewport: `${window.innerWidth}x${window.innerHeight}`,
-      screen: `${window.screen.width}x${window.screen.height}`,
+      ...(this.country ? { country: this.country } : {}),
     }
 
     if (this.currentSessionId) {
@@ -408,6 +417,7 @@ export class AnalyticsService {
   }
 
   private handleClick = (event: MouseEvent): void => {
+    if (isPrivateInteraction(event.target)) return
     const now = performance.now()
     if (now - this.lastPointerEventTimestamp < 16) {
       return
@@ -423,6 +433,7 @@ export class AnalyticsService {
   }
 
   private handleTouch = (event: TouchEvent): void => {
+    if (isPrivateInteraction(event.target)) return
     const touch = event.touches[0] ?? event.changedTouches[0]
     if (!touch) {
       return
@@ -442,7 +453,7 @@ export class AnalyticsService {
   }
 
   private handleKeydown = (event: KeyboardEvent): void => {
-    if (event.repeat) {
+    if (event.repeat || isPrivateInteraction(event.target)) {
       return
     }
 

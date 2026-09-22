@@ -31,13 +31,21 @@ export async function runApplicationAcceptance(invoke: AuthenticatedAppInvoker):
     if (!result.success) throw new Error(`${operation}: ${result.code}: ${result.errorMessage}`)
     return result.data
   }
-  const registration = { email: `${nonce}@example.invalid`, name: 'Synthetic acceptance attendee' }
+  const registration = {
+    mode: 'new', requestId: nonce, country: 'Canada', runeVersion: 1, runes: ['lakehouse', 'notebook', 'warehouse'],
+  } as const
   const [player, duplicatePlayer] = await Promise.all([
     call('registerPlayer', registration), call('registerPlayer', registration),
   ])
   check(JSON.stringify(player) === JSON.stringify(duplicatePlayer), 'concurrent registration must return one stored player')
-  const unchangedPlayer = await call('registerPlayer', { ...registration, name: 'Must not replace stored name' })
-  check(unchangedPlayer.name === player.name, 'registration retry changed attendee data')
+  const returningPlayer = await call('registerPlayer', {
+    mode: 'returning', playerCode: player.playerCode, runeVersion: 1, runes: registration.runes,
+  })
+  check(JSON.stringify(returningPlayer) === JSON.stringify(player), 'returning spell changed the player')
+  const incorrectSpell = await invoke('registerPlayer', {
+    mode: 'returning', playerCode: player.playerCode, runeVersion: 1, runes: ['warehouse', 'notebook', 'lakehouse'],
+  })
+  check(!incorrectSpell.success && incorrectSpell.code === 'PLAYER_VERIFICATION_FAILED', 'a reordered spell was accepted')
 
   const csvHeader = 'Category,Question,Answer1,Answer2,Answer3,Answer4,CorrectAnswerKey,Metadata,Pools'
   const csv = `${csvHeader}\n` + Array.from({ length: 101 }, (_, i) =>

@@ -7,7 +7,7 @@ const avatarSources: Record<string, string> = {
   quantumqueryist: '/avatars/quantumqueryist.png',
 }
 
-export function StationAvatar() {
+export function StationAvatar({ placement = 'fixed' }: { placement?: 'fixed' | 'entry' }) {
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null)
 
   useEffect(() => {
@@ -17,9 +17,20 @@ export function StationAvatar() {
       return
     }
 
-  const normalizedId = stationId.trim().toLowerCase()
-  setAvatarSrc(avatarSources[normalizedId] ?? null)
+    const normalizedId = stationId.trim().toLowerCase()
+    setAvatarSrc(avatarSources[normalizedId] ?? null)
   }, [])
+
+  if (placement === 'entry') {
+    return (
+      <img
+        src={avatarSrc ?? avatarSources.dashboarddruid}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+    )
+  }
 
   if (!avatarSrc) {
     return null

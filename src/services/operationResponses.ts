@@ -1,4 +1,6 @@
 import type { OperationMap } from '../types/api'
+import { isGeneratedPlayerName, isPlayerCode } from '../../rayfin/functions/src/playerIdentity'
+import { isCountry } from '../../rayfin/functions/src/countries'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -28,9 +30,9 @@ function question(value: unknown): boolean {
 }
 
 export const operationResponseValidators: Record<keyof OperationMap, (value: unknown) => boolean> = {
-  registerPlayer: value => isRecord(value) && isString(value.userId) && isString(value.name) &&
-    isString(value.email) && isString(value.createdAt) && optionalString(value.phoneNumber) &&
-    optionalString(value.country) && optionalString(value.state),
+  registerPlayer: value => isRecord(value) && isString(value.userId) && isGeneratedPlayerName(value.name) &&
+    isPlayerCode(value.playerCode) && isCountry(value.country) && isString(value.createdAt) &&
+    Object.keys(value).every(key => ['userId', 'name', 'playerCode', 'country', 'createdAt'].includes(key)),
   listPools: value => Array.isArray(value) && value.every(pool),
   getPool: pool,
   createPool: pool,

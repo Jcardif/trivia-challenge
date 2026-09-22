@@ -9,11 +9,11 @@ const result = await generateDabConfig({
 })
 const config = JSON.parse(await readFile(result.configPath, 'utf8'))
 const expected = [
-  'Player', 'QuestionPool', 'QuestionImport', 'Question', 'QuestionPoolMembership',
+  'Player', 'PlayerEntryState', 'QuestionPool', 'QuestionImport', 'Question', 'QuestionPoolMembership',
   'GameSession', 'SessionQuestion', 'GameSessionAnswer',
 ].sort()
 assert.deepEqual(Object.keys(config.entities).sort(), expected,
-  'Schema must contain exactly the eight application entities.')
+  'Schema must contain exactly the application entities, including private player-entry state.')
 for (const [name, entity] of Object.entries(config.entities)) {
   assert.deepEqual(entity.permissions, [{
     role: 'authenticated',
@@ -24,4 +24,15 @@ for (const [name, entity] of Object.entries(config.entities)) {
     assert.notEqual(field.dbType, 'NVARCHAR(MAX)', `${name} has unbounded text.`)
   }
 }
+const player = config.entities.Player
+assert.equal(player.source, 'Players')
+assert.deepEqual(Object.keys(player['x-schema'].fields).sort(), [
+  'id', 'playerCode', 'name', 'country', 'runeHash', 'runeVersion',
+  'failedAttempts', 'attemptWindowStartedAt', 'createdAt',
+].sort(), 'Player records must contain only the generated identity, country, and private verification state.')
+assert.equal(player['x-schema'].fields.country.dbType, 'NVARCHAR(80)')
+assert.deepEqual(player['x-schema'].constraints.uniqueConstraints.map(constraint => constraint.columns).sort(),
+  [['name'], ['playerCode']], 'Generated names and return codes must both be unique.')
+assert.equal(config.entities.PlayerEntryState.source, 'PlayerEntryStates',
+  'The generated entry-state table must match the transactional SQL implementation.')
 console.log(`Generated ${expected.length} application entities with private Data API policies.`)

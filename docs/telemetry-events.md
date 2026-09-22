@@ -13,7 +13,7 @@ Every event carries a stable UUID `eventId`, `event`, `type`, client ISO `timest
 | `pageview.home` | Registration page displayed | `path` |
 | `pageview.select-pool` | Pool selection page loaded | `path` |
 | `pool.selected` | Player chooses a pool | `poolId`, `poolName` |
-| `user.register` | Registration succeeds | `userId`, `name`, `hasPhoneNumber`, `country`, `state` |
+| `user.register` | A new or returning adventurer enters the challenge | `userId`, generated `name`, selected `country`, `entryMode` |
 | `game.start` | Session and draw loaded, countdown starting | `sessionId`, `questionCount`, `heartsRemaining` |
 | `game.answerquestion` | Answer persistence attempt resolves | `sessionId`, `questionId`, `category`, `answerIndex`, `isCorrect`, `responseTime`, `remainingTimeSeconds`, `questionNumber`, `heartsRemaining`, `totalScore` on success, `apiSuccess`, optional `error` |
 | `game.streakcompleted` | Streak progress reaches five | `sessionId`, `streakLevel`, `currentStreak`, `streakProgressAfterReset`, `heartsRemaining` |
@@ -24,9 +24,13 @@ Every event carries a stable UUID `eventId`, `event`, `type`, client ISO `timest
 
 `responseTime` is in milliseconds and `remainingTimeSeconds` is in seconds. Streak levels run from 1 to 5. Click and touch listeners share a 16 ms throttle. There is no mouse-movement listener.
 
-Common context includes `url`, `path`, `language`, `userAgent`, `viewport`, and `screen`. When available it also includes `sessionId`, `poolId`, `poolName`, and the `stationId` cookie. The event snapshots these fields and its top-level attendee `userId` before queueing, so a later attendee cannot change attribution. URL queries and fragments are stripped. Page-specific context may add `page`. See [Assign a station ID](operations.md#assign-a-station-id) for station assignment.
+Common context includes `url` and `path`. After identifying a player, it also includes the saved `country`, including on every gameplay event. This is a manually selected approved country/region name, not an inferred location. Browser language, user agent, viewport, and screen dimensions are no longer collected. When available, context also includes `sessionId`, `poolId`, `poolName`, and the `stationId` cookie. The event snapshots these fields and its top-level attendee `userId` before queueing, so a later attendee cannot change attribution. Resetting the player clears country attribution for subsequent events without changing queued events. URL queries and fragments are stripped. Page-specific context may add `page`. See [Assign a station ID](operations.md#assign-a-station-id) for station assignment.
 
-Keyboard events skip inputs, selects, textareas, editable content, and textbox roles. Non-control text keys are generalized. Registration still stores personal information, and telemetry can include attendee details; this is not an anonymous dataset. Restrict access and decide retention before an event. Do not publish raw participant payloads in logs, issues, or shared diagnostics.
+All click, touch, and keyboard capture skips regions marked `data-telemetry-private`, including player entry, rune selection, and private-code displays. Keyboard events also skip inputs, selects, textareas, editable content, and textbox roles. Non-control text keys are generalized.
+
+The browser queue and backend publisher reject known contact, credential, detailed-location, and browser-fingerprint fields, including nested fields. Country fields accept only names in `rayfin/functions/src/country-names.txt`; arbitrary location strings are rejected. `user.register` accepts only names matching the curated generated-name format. It never includes player codes, selected rune IDs, or rune verifiers. The creation request UUID becomes the player ID and is included as `userId`; it is not a secret. This is a guard against accidental collection, not a general detector for personal information hidden in arbitrary strings.
+
+Generated aliases, player IDs, country, station attribution, timestamps, and gameplay are still pseudonymous data. Do not claim that deleting contact fields makes the dataset legally anonymous. Restrict access and decide retention before collecting it. Existing events from older versions are not automatically sanitized or deleted, and platform/network logging needs a separate review. Do not publish raw participant payloads in logs, issues, or shared diagnostics.
 
 ## Delivery behavior
 

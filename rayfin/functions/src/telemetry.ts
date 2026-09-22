@@ -3,6 +3,8 @@ import type { CreateBatchOptions, EventData, SendBatchOptions } from '@azure/eve
 import type { RayfinContext } from '@microsoft/fabric-user-data-functions'
 import type { TelemetryBatchResponse, TelemetryEvent } from './contracts.js'
 import { DomainError } from './errors.js'
+import { isGeneratedPlayerName } from './playerIdentity.js'
+import { containsPrivateTelemetryFields } from './telemetryPrivacy.js'
 
 export const TELEMETRY_LIMITS = {
   eventsPerBatch: 50,
@@ -142,6 +144,13 @@ export function validateTelemetryBatch(payload: unknown, now = new Date()): Tele
       ...(typeof input.userId === 'string' ? { userId: input.userId } : {}),
       properties: input.properties === undefined ? {} : jsonObject(input.properties),
       context: input.context === undefined ? {} : jsonObject(input.context),
+    }
+    if (containsPrivateTelemetryFields(event.properties) || containsPrivateTelemetryFields(event.context)) {
+      return invalid('Telemetry must not contain contact details, player credentials, or browser fingerprint fields.')
+    }
+    if (event.event === 'user.register' && event.properties?.name !== undefined &&
+        !isGeneratedPlayerName(event.properties.name)) {
+      return invalid('Registration telemetry accepts only generated adventurer names.')
     }
     if (Buffer.byteLength(JSON.stringify(event), 'utf8') > TELEMETRY_LIMITS.eventBytes) {
       return invalid('Telemetry event exceeds the 16 KiB UTF-8 limit.')

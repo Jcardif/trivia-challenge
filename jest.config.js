@@ -16,7 +16,7 @@ const transform = {
 const shared = {
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
   transform,
-  moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
+  moduleNameMapper: { '\\.css$': 'identity-obj-proxy', '^(\\.{1,2}/.*)\\.js$': '$1' },
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 }
 

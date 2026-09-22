@@ -14,6 +14,7 @@ const authenticationListeners = new Set<() => void>()
 const signOut = jest.fn<() => Promise<void>>()
 const signIn = jest.fn<() => Promise<void>>()
 const invoke = jest.fn<(name: string, input: unknown) => Promise<unknown>>()
+const track = jest.fn()
 const readyConnection = {
   client: {
     auth: {
@@ -31,6 +32,14 @@ const getConnection = jest.fn(async () => readyConnection)
 jest.unstable_mockModule('@fabric-msft/svg-icons', () => ({
   Fabric32Color: () => null,
   Fabric32Filled: () => null,
+  ...Object.fromEntries([
+    'CopyJob32Item', 'DataWarehouse32Item', 'DataflowGen232Item', 'Environment32Item',
+    'EventHouse32Item', 'EventSchemaSet32Item', 'Eventstream32Item', 'Experiments32Item',
+    'FunctionSet32Item', 'KqlDatabase32Item', 'KqlQueryset32Item', 'Lakehouse32Item',
+    'MirroredGenericDatabase32Item', 'Model32Item', 'Notebook32Item', 'PaginatedReport32Item',
+    'Pipeline32Item', 'RealTimeDashboard32Item', 'Reflex32Item', 'Report32Item',
+    'SemanticModel32Item', 'SparkJobDirection32Item', 'SqlDatabase32Item', 'Variables32Item',
+  ].map(name => [name, () => null])),
 }))
 jest.unstable_mockModule('react-qr-code', () => ({
   default: ({ value }: { value: string }) => <svg data-testid="qr-code" data-value={value} />,
@@ -48,7 +57,7 @@ jest.unstable_mockModule('./services/rayfinClient', () => ({
 }))
 jest.unstable_mockModule('./services/analyticsService', () => ({
   analytics: {
-    identify: jest.fn(), track: jest.fn(), setSession: jest.fn(), setPool: jest.fn(),
+    identify: jest.fn(), track, setSession: jest.fn(), setPool: jest.fn(),
     resetTrackedEventCount: jest.fn(), getTrackedEventCount: () => 0,
     getDeliveryStatus: () => ({
       enabled: true, queuedCount: 0, deliveredCount: 0, droppedCount: 0,
@@ -59,7 +68,7 @@ jest.unstable_mockModule('./services/analyticsService', () => ({
 }))
 
 const { default: App } = await import('./App')
-const player = { userId: 'player-1', name: 'Fabric learner', email: 'learner@example.com', createdAt: '2026-09-10T00:00:00Z' }
+const player = { userId: 'player-1', name: 'Amber Query Weaver', playerCode: 'K482', country: 'Canada', createdAt: '2026-09-10T00:00:00Z' }
 const pool = { id: 'fabric', name: 'Fabric', iconPath: '/pools/default.svg', isActive: true, displayOrder: 0 }
 const originalFetch = globalThis.fetch
 
@@ -70,6 +79,7 @@ beforeEach(() => {
   authenticationListeners.clear()
   getConnection.mockReset().mockResolvedValue(readyConnection)
   invoke.mockReset()
+  track.mockClear()
   signIn.mockReset().mockImplementation(async () => {
     authenticated = true
     authenticationFailure = null
@@ -81,6 +91,11 @@ beforeEach(() => {
     sessionListeners.forEach(listener => listener())
   })
   Object.defineProperty(window.crypto, 'randomUUID', { value: randomUUID, configurable: true })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: jest.fn(() => ({ matches: true })),
+  })
+  HTMLElement.prototype.scrollIntoView = jest.fn()
   window.scrollTo = jest.fn()
   window.history.replaceState(null, '', '/signin')
 })
@@ -91,13 +106,28 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
+async function chooseSpell() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Lakehouse' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Notebook' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Data Pipeline' }))
+}
+
 async function registerAttendee() {
-  fireEvent.change(await screen.findByLabelText(/^Name/), { target: { value: 'Fabric learner' } })
-  fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'learner@example.com' } })
-  fireEvent.change(screen.getByLabelText(/^Country/), { target: { value: 'Canada' } })
-  const form = screen.getByLabelText(/^Name/).closest('form')
-  if (!form) throw new Error('Registration form missing')
-  fireEvent.submit(form)
+  await selectCountry()
+  await chooseSpell()
+  fireEvent.click(await screen.findByRole('button', { name: 'Begin trivia' }))
+}
+
+async function selectCountry(country = 'Canada') {
+  if (!screen.queryByRole('button', { name: /Choose your country \/ region/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Start a new adventure if/ }))
+  fireEvent.click(screen.getByRole('button', { name: /Choose your country \/ region/ }))
+  fireEvent.change(screen.getByRole('combobox', { name: 'Search countries' }), { target: { value: country } })
+  fireEvent.click(screen.getByRole('option', { name: country, exact: true }))
+}
+
+async function fillReturningCode(code = 'K482') {
+  fireEvent.change(await screen.findByLabelText('Adventurer code'), { target: { value: code } })
 }
 
 function expectNoOperatorTools() {
@@ -176,10 +206,12 @@ describe('ported attendee flow', () => {
       'https://aka.ms/fabrictrivia/l', 'https://aka.ms/fabrictrivia/f', 'https://aka.ms/fabrictrivia/c',
     ])
     fireEvent.click(playAgain)
-    await screen.findByLabelText(/^Email/)
+    await screen.findByRole('heading', { name: 'Continue your quest' })
     expect(signIn).toHaveBeenCalledTimes(1)
     expect(signOut).not.toHaveBeenCalled()
-    expect(screen.getByLabelText(/^Email/)).toHaveValue('')
+    expect(screen.getByLabelText('Adventurer code')).toHaveValue('')
+    expect(screen.queryByText(player.playerCode)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toHaveAttribute('aria-pressed', 'false')
     expectNoOperatorTools()
     const firstSessionId = sessionId
     await registerAttendee()
@@ -208,7 +240,9 @@ describe('ported attendee flow', () => {
   it('keeps the attendee form mounted when the operator session expires', async () => {
     authenticated = true
     render(<App />)
-    fireEvent.change(await screen.findByLabelText(/^Name/), { target: { value: 'Still here' } })
+    await fillReturningCode()
+    fireEvent.click(screen.getByRole('button', { name: 'Lakehouse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Notebook' }))
     act(() => {
       authenticated = false
       sessionListeners.forEach(listener => listener())
@@ -216,7 +250,8 @@ describe('ported attendee flow', () => {
     await screen.findByText(/operator session needs attention/i)
     expectNoOperatorTools()
     fireEvent.click(screen.getByRole('button', { name: 'Sign in operator with Fabric' }))
-    await waitFor(() => expect(screen.getByLabelText(/^Name/)).toHaveValue('Still here'))
+    await waitFor(() => expect(screen.getByLabelText('Adventurer code')).toHaveValue('K482'))
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toHaveAttribute('aria-pressed', 'true')
     expect(signOut).not.toHaveBeenCalled()
   })
 
@@ -502,12 +537,357 @@ describe('operator-only setup page', () => {
     expect(screen.getByRole('link', { name: 'Load questions and create pools' })).toHaveAttribute('href', '/questions/load')
     expect(screen.getByText('Telemetry: enabled.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('link', { name: 'Continue to the challenge' }))
-    await screen.findByLabelText(/^Name/)
+    await screen.findByRole('heading', { name: 'Continue your quest' })
     expect(window.location.pathname).toBe('/signin')
     expectNoOperatorTools()
     expect(signIn).toHaveBeenCalledTimes(1)
   })
 
+})
+
+describe('adventurer codes and private item-rune spells', () => {
+  it('requires a manual country choice from the approved list before creating an adventurer', async () => {
+    authenticated = true
+    invoke.mockResolvedValueOnce(player)
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Start a new adventure if/ }))
+    const country = screen.getByRole('button', { name: /Choose your country \/ region/ })
+    expect(country).toHaveTextContent('Choose your country')
+    await chooseSpell()
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toBeDisabled()
+    fireEvent.click(country)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search countries' }), { target: { value: 'Canada, Ontario' } })
+    expect(screen.getByText('No countries match.')).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Search countries' }), { key: 'Enter' })
+    fireEvent.submit(screen.getByRole('form', { name: 'Adventurer entry' }))
+    expect(invoke).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Search countries' }), { key: 'Escape' })
+    expect(country).toHaveFocus()
+    await selectCountry()
+    await chooseSpell()
+    await screen.findByRole('region', { name: 'Your adventurer is ready' })
+    expect(invoke).toHaveBeenCalledWith('registerPlayer', expect.objectContaining({ country: 'Canada' }))
+  })
+
+  it('shows nine icon-only runes and validates malformed return codes before calling the backend', async () => {
+    authenticated = true
+    render(<App />)
+    await fillReturningCode('909')
+    expect(screen.getByRole('group', { name: 'Item runes' }).querySelectorAll('button')).toHaveLength(9)
+    expect(screen.queryByText('Lakehouse')).not.toBeInTheDocument()
+    await chooseSpell()
+    fireEvent.blur(screen.getByLabelText('Adventurer code'))
+    expect(screen.getByRole('alert')).toHaveTextContent('Use one letter and three digits')
+    expect(screen.getByLabelText('Adventurer code')).toHaveAttribute('aria-invalid', 'true')
+    expect(invoke).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /Start a new adventure if/ }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toBeDisabled()
+  })
+
+  it('accepts exactly three distinct ordered runes, without asking for attendee details', async () => {
+    authenticated = true
+    invoke.mockImplementation(async name => {
+      if (name === 'registerPlayer') return player
+      if (name === 'listPools') return [pool]
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    render(<App />)
+    await screen.findByLabelText('Adventurer code')
+    expect(screen.queryByRole('button', { name: /Summon my adventurer/ })).not.toBeInTheDocument()
+    for (const field of [/^Name/, /^Email/, /^Phone/, /^State/, /^City/]) {
+      expect(screen.queryByLabelText(field)).not.toBeInTheDocument()
+    }
+    await selectCountry()
+    fireEvent.click(screen.getByRole('button', { name: 'Lakehouse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Notebook' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove rune 2: Notebook' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Data Pipeline' }))
+    expect(invoke).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Warehouse' }))
+    expect(screen.getByRole('button', { name: 'Warehouse' })).toBeDisabled()
+    await screen.findByRole('region', { name: 'Your adventurer is ready' })
+    expect(invoke).toHaveBeenCalledWith('registerPlayer', {
+      mode: 'new',
+      requestId: expect.any(String),
+      country: 'Canada',
+      runeVersion: 1,
+      runes: ['lakehouse', 'data-pipeline', 'warehouse'],
+    })
+    expect(screen.getByRole('status', { name: 'Adventurer code' })).toHaveTextContent(player.playerCode)
+    expect(screen.getByRole('heading', { name: player.name })).toBeInTheDocument()
+    expect(invoke.mock.calls.filter(([name]) => name === 'listPools')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Lakehouse' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Begin trivia$/ })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Remove rune 1: Lakehouse' })).toBeDisabled()
+    expect(screen.getByRole('heading', { name: 'Keep your adventurer code' })).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Begin trivia' }))
+    await screen.findByRole('button', { name: 'Begin Your Quest' })
+    expect(track).toHaveBeenCalledWith(
+      'user.register',
+      {
+        userId: player.userId,
+        name: player.name,
+        country: 'Canada',
+        entryMode: 'new',
+      },
+      { page: 'signin' }
+    )
+    expect(JSON.stringify(track.mock.calls)).not.toMatch(/K482|runes|requestId/)
+  })
+
+  it('retries the exact creation request without issuing a second identity or changing its spell', async () => {
+    authenticated = true
+    invoke.mockRejectedValueOnce(
+      new OperationError('Connection interrupted. Retry the same request.', 'NETWORK', true)
+    )
+    invoke.mockResolvedValueOnce(player)
+    render(<App />)
+    await selectCountry()
+    await chooseSpell()
+    await screen.findByText('Connection interrupted. Retry the same request.')
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'I already have a code' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Choose your country \/ region/ })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry summoning my adventurer' }))
+    await screen.findByRole('region', { name: 'Your adventurer is ready' })
+    const requests = invoke.mock.calls
+      .filter(([name]) => name === 'registerPlayer')
+      .map(([, input]) => input)
+    expect(requests).toHaveLength(2)
+    expect(requests[1]).toBe(requests[0])
+    expect(screen.getByRole('status', { name: 'Adventurer code' })).toHaveTextContent(player.playerCode)
+  })
+
+  it('waits for the completion animation before revealing a fast registration response', async () => {
+    authenticated = true
+    invoke.mockResolvedValueOnce(player)
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
+    render(<App />)
+    await selectCountry()
+    jest.useFakeTimers()
+    await chooseSpell()
+    await act(async () => {})
+    expect(invoke.mock.calls.filter(([name]) => name === 'registerPlayer')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Begin trivia' })).not.toBeInTheDocument()
+    act(() => jest.advanceTimersByTime(1600))
+    expect(screen.queryByRole('region', { name: 'Your adventurer is ready' })).not.toBeInTheDocument()
+    act(() => jest.advanceTimersByTime(100))
+    expect(screen.getByRole('button', { name: 'Begin trivia' })).toBeEnabled()
+    expect(screen.getByRole('status', { name: 'Adventurer code' })).toHaveTextContent('K482')
+  })
+
+  it('waits for the server when registration takes longer than the animation', async () => {
+    authenticated = true
+    let finish!: (value: unknown) => void
+    invoke.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) })
+    render(<App />)
+    await selectCountry()
+    jest.useFakeTimers()
+    await chooseSpell()
+    act(() => jest.advanceTimersByTime(1700))
+    expect(screen.queryByRole('button', { name: 'Begin trivia' })).not.toBeInTheDocument()
+    expect(screen.getByText('Forging your adventurer...')).toBeInTheDocument()
+    await act(async () => { finish(player) })
+    expect(screen.getByRole('button', { name: 'Begin trivia' })).toBeEnabled()
+  })
+
+  it('supports country selection and the three-column rune keypad with the keyboard', async () => {
+    authenticated = true
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: /Start a new adventure if/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Choose your country \/ region/ }))
+    const search = screen.getByRole('combobox', { name: 'Search countries' })
+    expect(search).toHaveFocus()
+    fireEvent.change(search, { target: { value: 'Canada' } })
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(screen.getByRole('button', { name: /Choose your country \/ region/ })).toHaveTextContent('Canada')
+    const lakehouse = screen.getByRole('button', { name: 'Lakehouse' })
+    act(() => lakehouse.focus())
+    fireEvent.keyDown(lakehouse, { key: 'ArrowRight' })
+    const warehouse = screen.getByRole('button', { name: 'Warehouse' })
+    expect(warehouse).toHaveFocus()
+    fireEvent.keyDown(warehouse, { key: 'ArrowDown' })
+    expect(screen.getByRole('button', { name: 'Dataflow Gen2' })).toHaveFocus()
+  })
+
+  it('verifies a returning code and ordered spell before opening the challenge', async () => {
+    authenticated = true
+    let entries = 0
+    invoke.mockImplementation(async name => {
+      if (name === 'registerPlayer') {
+        if (entries++ === 0)
+          throw new OperationError(
+            'That code and spell could not be verified.',
+            'PLAYER_VERIFICATION_FAILED',
+            false
+          )
+        return player
+      }
+      if (name === 'listPools') return [pool]
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    render(<App />)
+    await fillReturningCode(' k-482 ')
+    expect(screen.queryByRole('button', { name: 'Recast my spell' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Lakehouse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Notebook' }))
+    expect(invoke).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Data Pipeline' }))
+    await screen.findByText('Wrong code or spell. Try again, or wait 15 minutes.')
+    expect(screen.getByLabelText('Adventurer code')).toHaveValue('K482')
+    expect(screen.getByRole('group', { name: 'Item runes' }).querySelectorAll('[aria-pressed="true"]')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Retry verification' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: player.name })).not.toBeInTheDocument()
+    expect(invoke.mock.calls.filter(([name]) => name === 'listPools')).toHaveLength(0)
+    expect(invoke).toHaveBeenCalledWith('registerPlayer', {
+      mode: 'returning',
+      playerCode: 'K482',
+      runeVersion: 1,
+      runes: ['lakehouse', 'notebook', 'data-pipeline'],
+    })
+    await chooseSpell()
+    await screen.findByRole('button', { name: 'Begin Your Quest' })
+    expect(track).toHaveBeenCalledWith(
+      'user.register',
+      {
+        userId: player.userId,
+        name: player.name,
+        country: 'Canada',
+        entryMode: 'returning',
+      },
+      { page: 'signin' }
+    )
+  })
+
+  it('requires a valid code before selecting runes and prevents concurrent verification', async () => {
+    authenticated = true
+    let finish!: (value: unknown) => void
+    invoke.mockImplementation(async name => {
+      if (name === 'registerPlayer') return new Promise(resolve => { finish = resolve })
+      if (name === 'listPools') return [pool]
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    render(<App />)
+    await fillReturningCode('')
+    await chooseSpell()
+    expect(invoke).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Adventurer code'), { target: { value: 'K482' } })
+    expect(invoke).not.toHaveBeenCalled()
+    await chooseSpell()
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('form', { name: 'Adventurer entry' })).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByText('Checking your spell...')).toBeInTheDocument()
+    expect(screen.getByLabelText('Adventurer code')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toBeDisabled()
+    fireEvent.submit(screen.getByRole('form', { name: 'Adventurer entry' }))
+    expect(invoke).toHaveBeenCalledTimes(1)
+    await act(async () => { finish(player) })
+    await screen.findByRole('button', { name: 'Begin Your Quest' })
+    expect(invoke.mock.calls.filter(([name]) => name === 'registerPlayer')).toHaveLength(1)
+  })
+
+  it('retains the spell after a connection failure and retries only on an explicit request', async () => {
+    authenticated = true
+    invoke.mockRejectedValueOnce(new OperationError('Connection interrupted.', 'NETWORK_ERROR', true))
+    invoke.mockImplementation(async name => {
+      if (name === 'registerPlayer') return player
+      if (name === 'listPools') return [pool]
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    render(<App />)
+    await fillReturningCode()
+    await chooseSpell()
+    await screen.findByRole('alert')
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('group', { name: 'Item runes' }).querySelectorAll('[aria-pressed="true"]')).toHaveLength(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry verification' }))
+    await screen.findByRole('button', { name: 'Begin Your Quest' })
+    expect(invoke.mock.calls.filter(([name]) => name === 'registerPlayer')).toHaveLength(2)
+  })
+
+  it('clears forgotten credentials and starts a new identity instead of offering contact recovery', async () => {
+    authenticated = true
+    render(<App />)
+    await fillReturningCode()
+    fireEvent.click(screen.getByRole('button', { name: 'Lakehouse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Notebook' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /Start a new adventure if/ })
+    )
+    expect(screen.getByRole('heading', { name: 'Begin your quest' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Adventurer code')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toBeDisabled()
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('retains a stable in-flight creation and does not submit twice', async () => {
+    authenticated = true
+    let finish!: (value: unknown) => void
+    invoke.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        })
+    )
+    render(<App />)
+    await selectCountry()
+    await chooseSpell()
+    const form = screen.getByRole('form', { name: 'Adventurer entry' })
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Remove rune 1: Lakehouse' })).toBeDisabled()
+    await act(async () => {
+      finish(player)
+    })
+    await screen.findByRole('region', { name: 'Your adventurer is ready' })
+  })
+
+  it.each(['new', 'returning'])(
+    'ignores a late %s entry response after leaving the form',
+    async mode => {
+      authenticated = true
+      let finish!: (value: unknown) => void
+      invoke.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finish = resolve
+          })
+      )
+      render(<App />)
+      if (mode === 'returning') await fillReturningCode()
+      else await selectCountry()
+      await chooseSpell()
+      fireEvent.submit(screen.getByRole('form', { name: 'Adventurer entry' }))
+      expect(invoke).toHaveBeenCalledTimes(1)
+      act(() => {
+        window.history.pushState(null, '', '/operator')
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      })
+      await screen.findByRole('heading', { name: 'Kiosk operator setup' })
+      await act(async () => {
+        finish(player)
+      })
+      expect(window.location.pathname).toBe('/operator')
+      expect(invoke).toHaveBeenCalledTimes(1)
+      expect(track.mock.calls.some(([event]) => event === 'user.register')).toBe(false)
+      fireEvent.click(screen.getByRole('link', { name: 'Continue to the challenge' }))
+      await screen.findByRole('heading', { name: 'Continue your quest' })
+      expect(screen.getByRole('button', { name: 'Lakehouse' })).toBeDisabled()
+      expect(screen.queryByRole('heading', { name: player.name })).not.toBeInTheDocument()
+      expect(screen.queryByText(player.playerCode)).not.toBeInTheDocument()
+    }
+  )
+})
+
+describe('operator setup recovery', () => {
   it('allows operator sign-out on /operator without exposing management controls afterward', async () => {
     authenticated = true
     window.history.replaceState(null, '', '/operator')
@@ -523,7 +903,7 @@ describe('operator-only setup page', () => {
   it('offers minimal recovery for a rejected session even if the SDK still reports it authenticated', async () => {
     authenticated = true
     render(<App />)
-    fireEvent.change(await screen.findByLabelText(/^Name/), { target: { value: 'Keep this attendee' } })
+    await fillReturningCode()
     act(() => {
       authenticationFailure = 'The operator session was rejected. Sign in again with Fabric.'
       authenticationListeners.forEach(listener => listener())
@@ -533,7 +913,7 @@ describe('operator-only setup page', () => {
     expectNoOperatorTools()
     fireEvent.click(screen.getByRole('button', { name: 'Sign in operator with Fabric' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(screen.getByLabelText(/^Name/)).toHaveValue('Keep this attendee')
+    expect(screen.getByLabelText('Adventurer code')).toHaveValue('K482')
     expect(signOut).not.toHaveBeenCalled()
     expectNoOperatorTools()
   })
@@ -541,7 +921,7 @@ describe('operator-only setup page', () => {
   it('shows failed sign-in and allows retry without navigating or losing the attendee form', async () => {
     authenticated = true
     render(<App />)
-    fireEvent.change(await screen.findByLabelText(/^Name/), { target: { value: 'Still waiting' } })
+    await fillReturningCode()
     act(() => {
       authenticated = false
       sessionListeners.forEach(listener => listener())
@@ -552,7 +932,7 @@ describe('operator-only setup page', () => {
     expectNoOperatorTools()
     fireEvent.click(screen.getByRole('button', { name: 'Sign in operator with Fabric' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(screen.getByLabelText(/^Name/)).toHaveValue('Still waiting')
+    expect(screen.getByLabelText('Adventurer code')).toHaveValue('K482')
     expect(window.location.pathname).toBe('/signin')
   })
 

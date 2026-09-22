@@ -7,13 +7,52 @@ const questionId = '22222222-2222-4222-8222-222222222222'
 const answer = { sessionId, questionId, answerIndex: 0, timeElapsed: 0.123456789, isCorrect: false }
 
 describe('operation validation', () => {
-  it('normalizes registration email and empty optional fields', () => {
+  it('normalizes returning codes without accepting contact details or changing rune order', () => {
     expect(registrationInput({
-      email: '  Learner@Example.test  ', name: ' Learner ', phoneNumber: ' ',
-      country: '', state: ' WA ',
+      mode: 'returning', playerCode: ' k-042 ', runeVersion: 1,
+      runes: ['notebook', 'lakehouse', 'warehouse'],
     })).toEqual({
-      email: 'learner@example.test', name: 'Learner', phoneNumber: undefined, country: undefined, state: 'WA',
+      mode: 'returning', playerCode: 'K042', runeVersion: 1,
+      runes: ['notebook', 'lakehouse', 'warehouse'],
     })
+    expect(registrationInput({
+      mode: 'new', requestId: sessionId.toUpperCase(), country: 'Canada', runeVersion: 1,
+      runes: ['notebook', 'lakehouse', 'warehouse'],
+    })).toMatchObject({ requestId: sessionId })
+    expect(() => registrationInput({ email: 'test@example.invalid', name: 'Person' })).toThrow(DomainError)
+  })
+
+  it.each([undefined, null, '', ' ', 'Unlisted country', 'Canada, Ontario', 'canada', 1, {}])(
+    'rejects new-player countries outside the approved list: %j',
+    country => {
+      expect(() => registrationInput({
+        mode: 'new', requestId: sessionId, country, runeVersion: 1,
+        runes: ['notebook', 'lakehouse', 'warehouse'],
+      })).toThrow('Choose a country or region from the list.')
+    }
+  )
+
+  it.each([
+    { runes: ['lakehouse', 'lakehouse', 'notebook'] },
+    { runes: ['lakehouse', 'notebook'] },
+    { runes: ['lakehouse', 'notebook', 'invented'] },
+    { runes: ['lakehouse', 'notebook', 'report'] },
+    { runes: ['lakehouse', 'notebook', 'semantic-model'] },
+    { runes: ['lakehouse', 'notebook', 'ml-model'] },
+    { runeVersion: 2 },
+    { mode: 'other' },
+    { playerCode: 'I123' },
+    { playerCode: 'K1234' },
+    { playerCode: 'K12345' },
+    { email: 'test@example.invalid' },
+    { name: 'Person' },
+    { phoneNumber: '12345' },
+    { country: 'Country' },
+  ])('rejects unsupported or private player input %o', overrides => {
+    expect(() => registrationInput({
+      mode: 'returning', playerCode: 'K001', runeVersion: 1,
+      runes: ['notebook', 'lakehouse', 'warehouse'], ...overrides,
+    })).toThrow(DomainError)
   })
 
   it('preserves pool defaults and the slug-shaped contract', () => {

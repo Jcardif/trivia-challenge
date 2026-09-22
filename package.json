@@ -6,18 +6,21 @@
   "exports": "./rayfin/.temp/compiled/data/schema.js",
   "scripts": {
     "dev": "rayfin dev",
-    "dev:frontend": "vite --host 127.0.0.1 --port 5173",
-    "build": "tsc -b && vite build",
+    "dev:frontend": "npm run entry:generate && vite --host 127.0.0.1 --port 5173",
+    "names:generate": "node scripts/generate-player-names.mjs",
+    "countries:generate": "node scripts/generate-countries.mjs",
+    "entry:generate": "npm run names:generate && npm run countries:generate",
+    "build": "npm run entry:generate && tsc -b && vite build",
     "build:functions": "npm --prefix rayfin/functions run build",
     "build:schema": "tsc -b rayfin/tsconfig.json",
     "schema:check": "node scripts/check-schema.mjs",
-    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "test": "npm run entry:generate && node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,json,css}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,json,css}\"",
     "preview": "vite preview",
-    "type-check": "tsc -b --noEmit"
+    "type-check": "npm run entry:generate && tsc -b"
   },
   "dependencies": {
     "@fabric-msft/svg-icons": "^4.0.3",

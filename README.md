@@ -12,6 +12,7 @@ The application uses React and TypeScript, Rayfin Functions, a Fabric SQL databa
 - Question pools loaded from CSV files prepared in Excel or a text editor.
 - Touch, mouse, and keyboard controls.
 - One Fabric operator sign-in per kiosk browser. Attendees register without Fabric accounts.
+- Generated adventurer names, private return codes, and three-item rune spells instead of attendee contact forms.
 - Saved game results and event telemetry for analysis in Fabric.
 
 ## Getting started
@@ -50,7 +51,9 @@ Use [examples/questions.csv](examples/questions.csv) as a starting point for you
 
 ### 4. Run the challenge
 
-Return to attendee registration. Each player registers, selects a pool, reads the instructions, and plays. Wait for the result to finish saving before selecting **Play Again** for the next attendee.
+Return to player entry. New adventurers select **Start a new adventure**, choose their country or region, and select three different runes in order from the nine-item keypad. After the spell animation and server registration finish, their generated name and four-character code appear automatically. They keep their code and spell, then select **Begin trivia**. Returning adventurers enter their code; selecting the third rune verifies their spell automatically. No real name, email, phone number, city, or state is requested. The selected country is saved with the player and included in gameplay analytics. Each player then selects a pool, reads the instructions, and plays. Wait for the result to finish saving before selecting **Play Again** for the next attendee.
+
+Edit [country-names.txt](rayfin/functions/src/country-names.txt) to replace the country picker options, one approved name per line. Browser and Functions builds generate the shared list automatically. See [Run a kiosk](docs/operations.md#enter-as-an-adventurer) before changing names already assigned to players.
 
 For station setup and event operation, see [Run a kiosk](docs/operations.md).
 
@@ -75,6 +78,12 @@ Vite serves the frontend at `http://127.0.0.1:5173`. Fabric sign-in and gameplay
 
 `npm run dev` starts Rayfin's Fabric-backed development workflow and can create or update cloud resources. It is not an offline alternative.
 
+### Adventurer names
+
+Edit [player-name-words.txt](rayfin/functions/src/player-name-words.txt), with one entry per line under `[prefixes]` and `[titles]`. A player receives a name such as `Velvet Data Druid`. Only collisions add a sequence number: `Velvet Data Druid 2`, then `3`, and so on. Names have no random numeric suffix.
+
+`npm run names:generate` updates the shared generated word module. Frontend and Functions builds, type checking, and tests also run this step automatically. Do not edit `playerNameWords.generated.ts` directly. Retain words used by existing players unless you have a reviewed name migration; the same vocabulary validates responses and telemetry. Review the words before publication; the list is not legal or trademark clearance.
+
 ## Project structure
 
 | Path                | Contents                                            |
@@ -97,6 +106,7 @@ Vite serves the frontend at `http://127.0.0.1:5173`. Fabric sign-in and gameplay
 | [Kiosk operation](docs/operations.md) | Operator sign-in, station IDs, player handoff, and troubleshooting |
 | [Architecture](docs/architecture.md) | Components, game rules, data storage, and request handling |
 | [Telemetry](docs/telemetry-events.md) | Event reference, delivery monitoring, privacy, and report queries |
+| [Power BI leaderboard draft](docs/power-bi-leaderboard.md) | Fabio authoring workflow, DirectQuery, near-live refresh, and anonymous embedding setup |
 
 ## Contributing
 

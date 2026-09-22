@@ -9,7 +9,30 @@ Complete [deployment](deployment.md) and [question import](questions.md) before 
 3. Wait for the attendee registration page to appear.
 4. Leave the browser open for successive players.
 
-The operator signs in once per browser session. Attendees use the registration form and do not need Fabric accounts.
+The operator signs in once per browser session. Attendees use the adventurer entry screen and do not need Fabric accounts.
+
+## Enter as an adventurer
+
+For a new player:
+
+1. Select **Start a new adventure** and choose **Country / region**. Type to search the required picker; select a listed name with a click or the arrow keys and Enter. Escape closes the picker without changing the country.
+2. Select three different item runes in order from the nine choices. The numbers beneath the selected seals show the sequence. Before selecting the third rune, select a chosen token again or use its remove button to change it. Arrow keys move between rune keys.
+3. Selecting the third rune starts registration automatically. After the spell animation and server response, the public name and private four-character code, such as `K482`, appear. The code replaces the keypad beneath the selected runes. Reduced-motion preferences skip the animation wait.
+4. Remember the code and the three-rune sequence, then select **Begin trivia**.
+
+Returning entry is the initial view. From new-player entry, select **I already have a code**. Enter the code, then select the same three runes in the same order. Selecting the third rune checks the spell automatically and continues when it matches. A failed match displays an error and clears all three rune selections, keeping the entered code. There is no separate confirmation button. Lowercase code letters and pasted separating hyphens are normalized; leading zeros matter. The keypad stays disabled until the code is valid, and editing the code clears the spell. Connection or operator-session failures retain the spell and offer **Retry verification** instead of repeatedly retrying automatically.
+
+The private code is shown again on the saved results screen. Do not publish codes or spells on a leaderboard. Display names have no random numeric suffix. If a base name is already assigned, the next player receives that name followed by `2`, `3`, or the next collision number. This is part of the public display name, not another return code.
+
+Country or region is saved with the player and included in registration and gameplay analytics. It is selected manually, never inferred from GPS, IP address, or browser settings. There are no real-name, email, phone, city, or state fields. Returning players keep their saved country. Forgotten codes or spells cannot be recovered; **Start a new adventure** clears the entry form for a new identity. This also means several identities can belong to the same person.
+
+The approved country names live in [country-names.txt](../rayfin/functions/src/country-names.txt). Replace its contents with one approved country or region name per line, in the desired display order. Blank lines and `#` comments are ignored. Names must be unique ignoring case, contain no control characters, and fit within 80 UTF-16 code units. The current entries come from the application's previous country list; review or replace them before deployment. Builds generate `countryNames.generated.ts` for both the picker and server validation, without a runtime fetch. Do not edit the generated file. Keep names already assigned to players unless their records are migrated; removing or renaming a saved country can block returning entry and reject queued telemetry. Rebuild and deploy the frontend and Functions together after changing the list.
+
+If creation is interrupted, keep the tab open and use **Retry summoning my adventurer**. The request ID, country, and spell remain fixed so a lost response does not create another identity. Reusing a creation ID with a different country is rejected. **Start over with a new adventurer instead** abandons that local retry; it cannot recover the previous code.
+
+After five failed verifications for a player, entry is blocked for the remainder of its 15-minute attempt window. A shared 60-attempts-per-minute limit also applies across stations. Wait for the relevant window rather than repeatedly retrying. An incorrect code, incorrect spell, and a temporarily blocked player do not expose the stored name.
+
+The rune artwork comes from the installed `@fabric-msft/svg-icons` package. Icons retain their original artwork, with accessible item names rather than visible captions. Selected seals and token frames provide the fantasy styling. Motion follows the browser's reduced-motion preference. Review Microsoft's [icon usage terms](https://learn.microsoft.com/en-us/fabric/fundamentals/icons) and the editable [name word banks](../rayfin/functions/src/player-name-words.txt) before publishing the experience. The implementation is not legal or trademark clearance.
 
 ## Open operator setup
 
@@ -59,7 +82,7 @@ These options are applied at build time. Station lockdown is a kiosk control, no
 
 ## Between players
 
-Wait for the result to finish saving, then select **Play Again**. This clears the attendee and game state while keeping the operator session and station assignment.
+Wait for the result to finish saving, then select **Play Again**. This clears the player, private code, and game state from the active UI while keeping the operator session and station assignment. The next attendee gets an empty rune selection. Returning players must enter their own code and spell again.
 
 Keep the tab open while answers or results are saving. If a save fails, use the retry action in the app. Refreshing or closing the tab loses pending in-memory state; the application cannot resume the game after a refresh.
 
@@ -71,7 +94,9 @@ Complete a game on each configured station. Confirm that the intended pool is av
 
 Use an appropriate question-pool size for the devices and network at the event. The full pool is loaded before gameplay starts.
 
-Registration collects attendee information. Confirm your event's privacy notice, consent process, access controls, and retention policy before collecting it.
+The app no longer requests attendee contact details, but generated identities, timestamps, and linked gameplay are pseudonymous data. Confirm the privacy notice, legal basis, access controls, retention/deletion policy, and public-display policy with the responsible privacy owner. Review platform access logs separately; the app cannot guarantee that hosting or identity infrastructure processes no personal data.
+
+Removing contact fields from the application does not erase information collected by older versions. Review historical SQL data, Eventhouse data, exports, and backups separately before sharing reports. Do not expose player codes, spell hashes, or verification counters to Power BI.
 
 ## Operator troubleshooting
 
@@ -82,6 +107,8 @@ Registration collects attendee information. Confirm your event's privacy notice,
 | An import reports row errors | Follow the [CSV error reference](questions.md#limits-and-errors). |
 | The result is still saving | Keep the tab open. Retry failed writes before handing the station to another player. |
 | Operator authentication expires | Sign in again in the same tab, then retry the pending save. |
+| A code and spell cannot be verified | Check the code, leading zeros, and exact rune order. Wait after repeated failures; create a new adventurer if the credentials are forgotten. |
+| Creation failed after submitting | Retry the same creation request in the open tab to recover an already-created identity. |
 | Telemetry is queued or dropped | After the current game is saved, open `/operator` to inspect delivery status and follow the [telemetry guide](telemetry-events.md). |
 
 ## Pool artwork

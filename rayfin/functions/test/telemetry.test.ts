@@ -80,6 +80,35 @@ class FakeProducer implements TelemetryProducer<FakeBatch> {
 }
 
 describe('telemetry function validation and envelope', () => {
+  it.each([
+    { email: 'person@example.invalid' },
+    { name: 'Real Person' },
+    { phoneNumber: '123456' },
+    { country: 'Country' },
+    { nested: { country: 'Canada, Ontario' } },
+    { state: 'Ontario' },
+    { city: 'Toronto' },
+    { latitude: 43.6 },
+    { nested: { playerCode: 'K4827' } },
+    { runes: ['lakehouse', 'notebook', 'warehouse'] },
+    { rune_hash: 'private' },
+  ])('rejects attendee details and credentials at the publisher boundary: %o', properties => {
+    expect(() => validateTelemetryBatch({
+      events: [event({ event: 'user.register', type: 'user', properties })],
+    }, NOW)).toThrow()
+  })
+
+  it('accepts generated aliases and approved countries without accepting fingerprint fields', () => {
+    expect(validateTelemetryBatch({
+      events: [event({ event: 'user.register', type: 'user', properties: {
+        name: 'Amber Query Weaver', country: 'Canada', entryMode: 'new',
+      }, context: { country: 'Canada' } })],
+    }, NOW)).toHaveLength(1)
+    for (const field of ['userAgent', 'viewport', 'screen', 'language']) {
+      expect(() => validateTelemetryBatch({ events: [event({ context: { [field]: 'private' } })] }, NOW)).toThrow()
+    }
+  })
+
   it.each(EVENT_TYPES)('preserves %s with its existing envelope and attribution', (eventName, type) => {
     const original = event({ event: eventName, type })
     const [validated] = validateTelemetryBatch({ events: [original] }, NOW)
@@ -383,7 +412,8 @@ describe('browser telemetry delivery', () => {
 
   it('snapshots attendee, session, pool, station, payload and event ID before retries', async () => {
     const participant: User = {
-      userId: 'participant-one', email: 'test@example.invalid', name: 'Test',
+      userId: 'participant-one', playerCode: 'K4827', name: 'Amber Query Weaver',
+      country: 'Canada',
       createdAt: NOW.toISOString(),
     }
     service.identify(participant)
@@ -397,7 +427,7 @@ describe('browser telemetry delivery', () => {
     const original = structuredClone(sender.mock.calls[0][0][0])
     properties.nested.score = 20
     context.nested.page = 'results'
-    service.identify({ ...participant, userId: 'participant-two' })
+    service.identify({ ...participant, userId: 'participant-two', country: 'Kenya' })
     service.setSession('session-two')
     service.setPool({ id: 'other', name: 'Other' })
     document.cookie = 'stationId=station-two'
@@ -406,14 +436,53 @@ describe('browser telemetry delivery', () => {
     expect(sender.mock.calls[1][0][0]).toEqual(original)
     expect(original).toMatchObject({
       userId: 'participant-one', properties: { nested: { score: 10 } },
-      context: { sessionId: 'session-one', poolId: 'fabric', poolName: 'Fabric', stationId: 'station-one' },
+      context: { country: 'Canada', sessionId: 'session-one', poolId: 'fabric', poolName: 'Fabric', stationId: 'station-one' },
     })
     expect(original.properties).not.toHaveProperty('optional')
     expect(sender.mock.calls[1][0][1]).toMatchObject({
-      userId: 'participant-two', context: { sessionId: 'session-two', poolId: 'other', stationId: 'station-two' },
+      userId: 'participant-two', context: { country: 'Kenya', sessionId: 'session-two', poolId: 'other', stationId: 'station-two' },
     })
     expect(original.context?.url).toBe('https://trivia.example/playing')
+    for (const field of ['userAgent', 'viewport', 'screen', 'language']) {
+      expect(original.context).not.toHaveProperty(field)
+    }
     expect(JSON.stringify(warn.mock.calls)).not.toMatch(/participant|Private upstream|private-code|private-token/)
+    service.identify(null)
+    service.track('pageview.home')
+    await service.flush()
+    const nextAttendee = sender.mock.calls.at(-1)?.[0][0]
+    expect(nextAttendee).not.toHaveProperty('userId')
+    expect(nextAttendee?.context).not.toHaveProperty('country')
+  })
+
+  it('never queues contact details, player codes, spell choices, or arbitrary registration names', async () => {
+    for (const properties of [
+      { email: 'person@example.invalid' }, { playerCode: 'K4827' },
+      { nested: { runes: ['lakehouse', 'warehouse', 'notebook'] } }, { name: 'Real Person' },
+      { country: 'Canada, Ontario' }, { nested: { city: 'Toronto' } },
+    ]) service.track('user.register', properties)
+    service.track('user.register', { name: 'Amber Query Weaver', country: 'Canada', entryMode: 'returning' })
+    await service.flush()
+    expect(service.getDeliveryStatus()).toMatchObject({ droppedCount: 6, deliveredCount: 1 })
+    expect(sender.mock.calls[0][0][0].properties).toEqual({ name: 'Amber Query Weaver', country: 'Canada', entryMode: 'returning' })
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/person@example|K4827|Real Person|lakehouse/)
+  })
+
+  it('does not capture clicks, touches, or keystrokes inside a private entry/code region, including SVG targets', async () => {
+    service.initialize()
+    document.body.innerHTML = '<section data-telemetry-private><button id="rune"><svg><path /></svg>Rune</button><input id="code" value="K4827" /></section>'
+    const button = document.getElementById('rune')
+    const svg = document.querySelector('svg')
+    if (!button || !svg) throw new Error('Private fixture missing')
+    button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+    svg.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+    button.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    const touch = new dom.window.Event('touchstart', { bubbles: true })
+    Object.defineProperty(touch, 'touches', { value: [{ clientX: 10, clientY: 10 }] })
+    svg.dispatchEvent(touch)
+    await service.flush()
+    expect(sender).not.toHaveBeenCalled()
+    expect(service.getTrackedEventCount()).toBe(0)
   })
 
   it('returns the active flush promise and never runs concurrent sends', async () => {

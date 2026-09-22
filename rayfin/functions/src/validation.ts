@@ -1,6 +1,8 @@
 import type { CreatePoolInput, EndSessionRequest, RegisterUserRequest, SubmitAnswerRequest } from './contracts.js'
 import { DomainError } from './errors.js'
+import { isCountry } from './countries.js'
 import { GAME_RULE_DEFAULTS } from './gameRules.js'
+import { isPlayerCode, isRuneSpell, normalizePlayerCode, RUNE_CATALOG_VERSION } from './playerIdentity.js'
 
 export const TEXT_LIMIT = 4000
 export const SLUG_LIMIT = 400
@@ -67,15 +69,23 @@ export function boolean(value: unknown, field: string): boolean {
 
 export function registrationInput(value: unknown): RegisterUserRequest {
   const input = record(value)
-  const email = text(input.email, 'Email', 320).toLowerCase()
-  if (email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(email)) return invalid('Email is invalid.')
-  return {
-    email,
-    name: text(input.name, 'Name'),
-    phoneNumber: optionalText(input.phoneNumber, 'Phone number'),
-    country: optionalText(input.country, 'Country'),
-    state: optionalText(input.state, 'State'),
+  const allowed = input.mode === 'new'
+    ? ['mode', 'requestId', 'country', 'runeVersion', 'runes']
+    : ['mode', 'playerCode', 'runeVersion', 'runes']
+  if (Object.keys(input).some(key => !allowed.includes(key))) {
+    return invalid('Player entry accepts only the country for a new adventurer, a code or request ID, and an item-rune spell.')
   }
+  if (input.runeVersion !== RUNE_CATALOG_VERSION) return invalid('This spell catalog is not supported. Reload the entry page.')
+  if (!isRuneSpell(input.runes)) return invalid('Choose three different item runes in order.')
+  const spell = { runeVersion: RUNE_CATALOG_VERSION, runes: input.runes } as const
+  if (input.mode === 'new') {
+    if (!isCountry(input.country)) return invalid('Choose a country or region from the list.')
+    return { ...spell, mode: 'new', requestId: uuid(input.requestId, 'requestId'), country: input.country }
+  }
+  if (input.mode !== 'returning') return invalid('Choose new or returning adventurer.')
+  const playerCode = normalizePlayerCode(text(input.playerCode, 'Adventurer code', 12))
+  if (!isPlayerCode(playerCode)) return invalid('Enter one code letter followed by three digits, such as K482.')
+  return { ...spell, mode: 'returning', playerCode }
 }
 
 export function poolInput(value: unknown): Required<Omit<CreatePoolInput, 'description'>> & { description?: string } {

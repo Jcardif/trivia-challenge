@@ -1,5 +1,12 @@
 import { useEffect } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
 import { GameProvider, useGame } from './context/GameContext'
 import SignInPage from './pages/SignInPage'
 import PoolSelectionPage from './pages/PoolSelectionPage'
@@ -20,19 +27,24 @@ function PlayerRoutes() {
   }, [lockedPath, location.pathname, navigate])
 
   return (
-    <Routes location={lockedPath ?? location}>
-      <Route path="/" element={<Navigate to="/signin" replace />} />
-      <Route path="/signin" element={<SignInPage />} />
-      <Route path="/select-pool" element={<PoolSelectionPage />} />
-      <Route path="/instructions" element={<InstructionsPage />} />
-      <Route path="/playing" element={<PlayingPage />} />
-      <Route path="/results" element={<ResultsPage />} />
-      {/* OperatorGate renders this page without unmounting children during sign-in recovery. */}
-      <Route path="/operator" element={null} />
-      <Route path="/questions/load" element={<QuestionLoadingPage />} />
-      <Route path="/auth/callback" element={<Navigate to="/signin" replace />} />
-      <Route path="*" element={<Navigate to="/signin" replace />} />
-    </Routes>
+    <>
+      {(lockedPath ?? location.pathname).replace(/\/+$/, '').toLowerCase() !== '/signin' && (
+        <StationAvatar />
+      )}
+      <Routes location={lockedPath ?? location}>
+        <Route path="/" element={<Navigate to="/signin" replace />} />
+        <Route path="/signin" element={<SignInPage />} />
+        <Route path="/select-pool" element={<PoolSelectionPage />} />
+        <Route path="/instructions" element={<InstructionsPage />} />
+        <Route path="/playing" element={<PlayingPage />} />
+        <Route path="/results" element={<ResultsPage />} />
+        {/* OperatorGate renders this page without unmounting children during sign-in recovery. */}
+        <Route path="/operator" element={null} />
+        <Route path="/questions/load" element={<QuestionLoadingPage />} />
+        <Route path="/auth/callback" element={<Navigate to="/signin" replace />} />
+        <Route path="*" element={<Navigate to="/signin" replace />} />
+      </Routes>
+    </>
   )
 }
 
@@ -41,7 +53,6 @@ function App() {
     <GameProvider>
       <Router>
         <OperatorGate>
-          <StationAvatar />
           <div className="relative z-10 min-h-screen bg-blue-500">
             <PlayerRoutes />
           </div>

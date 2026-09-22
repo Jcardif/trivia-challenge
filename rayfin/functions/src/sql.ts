@@ -80,7 +80,7 @@ export class SqlSession {
   }
 }
 
-export type SqlTable = 'Players' | 'QuestionPools' | 'QuestionImports' | 'Questions' |
+export type SqlTable = 'Players' | 'PlayerEntryStates' | 'QuestionPools' | 'QuestionImports' | 'Questions' |
   'QuestionPoolMemberships' | 'GameSessions' | 'SessionQuestions' | 'GameSessionAnswers'
 
 export function* insertBatches(

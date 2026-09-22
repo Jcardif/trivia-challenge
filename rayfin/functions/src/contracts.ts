@@ -1,26 +1,20 @@
-/**
- * API Types
- * 
- * TypeScript definitions for API requests and responses
- */
+import type { RUNE_CATALOG_VERSION, RuneSpell } from './playerIdentity.js'
 
 export interface User {
   userId: string
-  email: string
   name: string
-  phoneNumber?: string
-  country?: string
-  state?: string
+  playerCode: string
+  country: string
   createdAt: string
 }
 
-export interface RegisterUserRequest {
-  email: string
-  name: string
-  phoneNumber?: string
-  country?: string
-  state?: string
-}
+export type RegisterUserRequest = {
+  runeVersion: typeof RUNE_CATALOG_VERSION
+  runes: RuneSpell
+} & (
+  | { mode: 'new'; requestId: string; country: string }
+  | { mode: 'returning'; playerCode: string }
+)
 
 export type SessionStatus = 'active' | 'completed' | 'abandoned'
 

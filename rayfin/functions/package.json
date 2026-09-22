@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/function_app.js",
   "scripts": {
-    "build": "tsc --build"
+    "build": "node ../../scripts/generate-player-names.mjs && node ../../scripts/generate-countries.mjs && tsc --build"
   },
   "dependencies": {
     "@azure/event-hubs": "5.12.2",

@@ -2,6 +2,21 @@ import { describe, expect, it } from '@jest/globals'
 import { operationResponseValidators as validate } from './operationResponses'
 
 describe('Function response validation', () => {
+  it('accepts generated identities but rejects contact data and private spell fields', () => {
+    const player = {
+      userId: 'player', name: 'Amber Query Weaver', playerCode: 'K042', country: 'Canada', createdAt: '2026-09-21T00:00:00Z',
+    }
+    expect(validate.registerPlayer(player)).toBe(true)
+    expect(validate.registerPlayer({ ...player, name: 'Amber Query Weaver 2' })).toBe(true)
+    expect(validate.registerPlayer({ ...player, name: 'Amber Query Weaver 02' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, name: 'Real Person' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, playerCode: 'K42' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, country: undefined })).toBe(false)
+    expect(validate.registerPlayer({ ...player, country: 'Unlisted country' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, email: 'person@example.invalid' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, runeHash: 'private' })).toBe(false)
+  })
+
   it('accepts decoded canonical responses and rejects extra JSON encoding', () => {
     const answer = { pointsEarned: 10, totalScore: 20 }
     expect(validate.submitAnswer(answer)).toBe(true)
