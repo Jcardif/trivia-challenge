@@ -2,7 +2,7 @@ import { invokeOperation } from './rayfinClient'
 import { gameConfig } from '../config/gameConfig'
 import { getCookie } from '../lib/utils'
 import { isGeneratedPlayerName } from '../../rayfin/functions/src/playerIdentity'
-import { containsPrivateTelemetryFields } from '../../rayfin/functions/src/telemetryPrivacy'
+import { containsPrivateTelemetryFields, normalizeTelemetryString } from '../../rayfin/functions/src/telemetryPrivacy'
 import type {
   TelemetryBatchResponse,
   TelemetryEvent,
@@ -62,12 +62,14 @@ function snapshot(data: unknown): TelemetryJsonObject {
   let remainingNodes = 2000
   const ancestors = new Set<object>()
 
-  function clone(value: unknown, depth: number): TelemetryJsonValue {
+  function clone(value: unknown, depth: number, key = ''): TelemetryJsonValue {
     if (--remainingNodes < 0 || depth > 8) {
       throw new Error('Telemetry JSON exceeds the complexity limit.')
     }
     if (value === null || typeof value === 'boolean') return value
-    if (typeof value === 'string' && value.length <= MAX_EVENT_BYTES) return value
+    if (typeof value === 'string' && value.length <= MAX_EVENT_BYTES) {
+      return normalizeTelemetryString(key, value)
+    }
     if (typeof value === 'number' && Number.isFinite(value)) return value
     if (typeof value !== 'object' || value === null || ancestors.has(value)) {
       throw new Error('Telemetry requires finite, acyclic JSON values.')
@@ -95,7 +97,7 @@ function snapshot(data: unknown): TelemetryJsonObject {
         // Optional object fields are omitted, matching the existing event callers.
         if (descriptor.value === undefined) continue
         Object.defineProperty(result, key, {
-          value: clone(descriptor.value, depth + 1),
+          value: clone(descriptor.value, depth + 1, key),
           enumerable: true,
         })
       }

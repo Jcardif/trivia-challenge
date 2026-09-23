@@ -8,8 +8,8 @@ const countries = readFileSync(source, 'utf8')
   .filter(line => line && !line.startsWith('#'))
 
 if (!countries.length) throw new Error('country-names.txt needs at least one country or region.')
-if (countries.some(country => country.length > 80 || /\p{Cc}/u.test(country))) {
-  throw new Error('Country names must be at most 80 characters and contain no control characters.')
+if (countries.some(country => country.length > 80 || !/^[\x20-\x7E]+$/.test(country))) {
+  throw new Error('Country names must be at most 80 characters and use only printable ASCII characters.')
 }
 if (new Set(countries.map(country => country.toLowerCase())).size !== countries.length) {
   throw new Error('country-names.txt contains duplicate country names.')

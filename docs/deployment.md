@@ -201,6 +201,8 @@ Review the generated schema changes and existing data before deployment. Existin
 
 Review `rayfin/functions/src/country-names.txt` before deployment. New players must select an approved country; it is saved and included in analytics. Rows without a country need a separately reviewed data transition, not an invented default. Builds generate the picker and backend allowlist from the same TXT file. Deploy frontend and Functions together, and preserve names used by existing players unless their records are migrated.
 
+Country labels now use printable ASCII. The [seven renamed countries](operations.md#ascii-country-names) have explicit aliases for existing players and queued telemetry. Deploy frontend and Functions together, finish active games, and reload idle kiosks before using the new labels. Old frontend builds do not recognize the new spellings returned by the updated backend. Deployment does not rewrite existing SQL country values or historical Eventhouse events; review those updates separately with the database and report owners.
+
 Any destructive migration, removal of historical contact fields, or cleanup of old SQL/Eventhouse/exported data requires a separate authorized plan. Updating application code alone does not erase previously collected information. Run `npm run schema:check` locally to check entity discovery and private policies; this does not apply the schema to Fabric.
 
 The entry format uses nine runes and four-character codes. Deploy the frontend, Functions, and four-character `playerCode` column together. Five-character codes and removed rune choices are not supported. No credential conversion or historical-name rewrite runs automatically.

@@ -206,6 +206,36 @@ describe('contact-free player persistence', () => {
     expect(await registerPlayer(ctx, resume(player.playerCode))).toEqual(player)
   })
 
+  it.each([
+    ['Åland Islands', 'Aland Islands'],
+    ['Côte d’Ivoire', "Cote d'Ivoire"],
+    ['Curaçao', 'Curacao'],
+    ['Réunion', 'Reunion'],
+    ['Saint Barthélemy', 'Saint Barthelemy'],
+    ['São Tomé and Príncipe', 'Sao Tome and Principe'],
+    ['Türkiye', 'Turkiye'],
+  ])('stores %s as %s and preserves legacy-player returns and creation retries', async (previous, current) => {
+    const input = { ...request(), country: previous }
+    const player = await registerPlayer(ctx, input)
+    expect(player.country).toBe(current)
+    expect(tables.Players[0].country).toBe(current)
+    const playerInsert = insert.mock.calls.find(([table]) => table === 'Players')
+    expect(playerInsert).toBeDefined()
+    if (!playerInsert) throw new Error('Missing player insert.')
+    const [, columns, rows] = playerInsert
+    expect(rows[0][columns.indexOf('country')]).toEqual(realSql.str(current, 80))
+
+    tables.Players[0].country = previous
+    expect(await registerPlayer(ctx, resume(player.playerCode))).toEqual(player)
+    expect(await registerPlayer(ctx, { ...input, country: current })).toEqual(player)
+    expect(await registerPlayer(ctx, input)).toEqual(player)
+    expect(tables.Players).toHaveLength(1)
+    expect(tables.Players[0].country).toBe(previous)
+    await expect(registerPlayer(ctx, { ...input, country: 'Canada' })).rejects.toMatchObject({
+      code: 'PLAYER_REGISTRATION_CONFLICT',
+    })
+  })
+
   it('replays a creation after a lost response and returns the same player on simultaneous requests', async () => {
     const input = request()
     const [first, replay] = await Promise.all([

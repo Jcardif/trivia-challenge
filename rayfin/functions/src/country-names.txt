@@ -1,5 +1,5 @@
 Afghanistan
-Åland Islands
+Aland Islands
 Albania
 Algeria
 American Samoa
@@ -53,10 +53,10 @@ Congo
 Congo (DRC)
 Cook Islands
 Costa Rica
-Côte d’Ivoire
+Cote d'Ivoire
 Croatia
 Cuba
-Curaçao
+Curacao
 Cyprus
 Czechia
 Denmark
@@ -181,12 +181,12 @@ Poland
 Portugal
 Puerto Rico
 Qatar
-Réunion
+Reunion
 Romania
 Russia
 Rwanda
 Saba
-Saint Barthélemy
+Saint Barthelemy
 Saint Kitts and Nevis
 Saint Lucia
 Saint Martin
@@ -194,7 +194,7 @@ Saint Pierre and Miquelon
 Saint Vincent and the Grenadines
 Samoa
 San Marino
-São Tomé and Príncipe
+Sao Tome and Principe
 Saudi Arabia
 Senegal
 Serbia
@@ -229,7 +229,7 @@ Tokelau
 Tonga
 Trinidad and Tobago
 Tunisia
-Türkiye
+Turkiye
 Turkmenistan
 Turks and Caicos Islands
 Tuvalu

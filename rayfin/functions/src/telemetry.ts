@@ -4,7 +4,7 @@ import type { RayfinContext } from '@microsoft/fabric-user-data-functions'
 import type { TelemetryBatchResponse, TelemetryEvent } from './contracts.js'
 import { DomainError } from './errors.js'
 import { isGeneratedPlayerName } from './playerIdentity.js'
-import { containsPrivateTelemetryFields } from './telemetryPrivacy.js'
+import { containsPrivateTelemetryFields, normalizeTelemetryString } from './telemetryPrivacy.js'
 
 export const TELEMETRY_LIMITS = {
   eventsPerBatch: 50,
@@ -47,13 +47,15 @@ function jsonObject(value: unknown): JsonObject {
   let nodes = 0
   const ancestors = new Set<object>()
 
-  function copy(input: unknown, depth: number): JsonValue {
+  function copy(input: unknown, depth: number, key = ''): JsonValue {
     if (++nodes > TELEMETRY_LIMITS.jsonNodes || depth > TELEMETRY_LIMITS.jsonDepth) {
       return invalid('Telemetry JSON exceeds the complexity limit.')
     }
     if (input === null || typeof input === 'boolean') return input
     if (typeof input === 'number' && Number.isFinite(input)) return input
-    if (typeof input === 'string' && input.length <= TELEMETRY_LIMITS.eventBytes) return input
+    if (typeof input === 'string' && input.length <= TELEMETRY_LIMITS.eventBytes) {
+      return normalizeTelemetryString(key, input)
+    }
     if (input === null || typeof input !== 'object' || ancestors.has(input)) {
       return invalid('Telemetry requires finite, acyclic JSON values.')
     }
@@ -78,7 +80,7 @@ function jsonObject(value: unknown): JsonObject {
           return invalid('Telemetry does not accept accessors or hidden properties.')
         }
         Object.defineProperty(result, key, {
-          value: copy(descriptor.value, depth + 1),
+          value: copy(descriptor.value, depth + 1, key),
           enumerable: true,
         })
       }

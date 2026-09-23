@@ -201,6 +201,8 @@ describe('ported attendee flow', () => {
     await act(async () => { acceptAnswer({ totalScore: 10, pointsEarned: 10 }) })
     const playAgain = await screen.findByRole('button', { name: 'Play Again' })
     expectNoOperatorTools()
+    expect(screen.queryByRole('region', { name: 'Private adventurer code' })).not.toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(player.playerCode)
     expect(invoke.mock.calls.filter(([name]) => name === 'endSession')).toHaveLength(1)
     expect(screen.getAllByTestId('qr-code').map(code => code.getAttribute('data-value'))).toEqual([
       'https://aka.ms/fabrictrivia/l', 'https://aka.ms/fabrictrivia/f', 'https://aka.ms/fabrictrivia/c',
@@ -546,6 +548,48 @@ describe('operator-only setup page', () => {
 })
 
 describe('adventurer codes and private item-rune spells', () => {
+  it('masks returning entry with asterisks while preserving editing, paste, and verification', async () => {
+    authenticated = true
+    invoke.mockImplementation(async name => {
+      if (name === 'registerPlayer') return { ...player, playerCode: 'K042' }
+      if (name === 'listPools') return [pool]
+      throw new Error(`Unexpected operation ${name}`)
+    })
+    render(<App />)
+    const input = await screen.findByLabelText<HTMLInputElement>('Adventurer code')
+    const cells = input.closest('.entry-code-lock')?.querySelector('.entry-code-cells')
+    expect(input).toHaveAttribute('type', 'password')
+    expect(cells).toHaveTextContent('----')
+    for (const [value, masked] of [['k', '*---'], ['k4', '**--'], ['k48', '***-'], ['k482', '****']]) {
+      fireEvent.change(input, { target: { value } })
+      expect(input).toHaveValue(value.toUpperCase())
+      expect(cells).toHaveTextContent(masked)
+      expect(cells?.textContent).not.toMatch(/[A-Z0-9]/)
+    }
+    input.setSelectionRange(1, 3)
+    fireEvent.select(input)
+    expect(cells?.querySelectorAll('[data-selected="true"]')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Lakehouse' }))
+    fireEvent.change(input, { target: { value: 'K48' } })
+    expect(cells).toHaveTextContent('***-')
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Lakehouse' })).toBeDisabled()
+    fireEvent.paste(input, { clipboardData: { getData: () => ' k-042 ' } })
+    expect(input).toHaveValue('K042')
+    expect(cells).toHaveTextContent('****')
+    expect(document.body).not.toHaveTextContent('K042')
+    await chooseSpell()
+    expect(invoke).toHaveBeenCalledWith('registerPlayer', {
+      mode: 'returning',
+      playerCode: 'K042',
+      runeVersion: 1,
+      runes: ['lakehouse', 'notebook', 'data-pipeline'],
+    })
+    await screen.findByRole('button', { name: 'Begin Your Quest' })
+    expect(screen.queryByRole('status', { name: 'Adventurer code' })).not.toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent('K042')
+  })
+
   it('requires a manual country choice from the approved list before creating an adventurer', async () => {
     authenticated = true
     invoke.mockResolvedValueOnce(player)
@@ -567,6 +611,20 @@ describe('adventurer codes and private item-rune spells', () => {
     await chooseSpell()
     await screen.findByRole('region', { name: 'Your adventurer is ready' })
     expect(invoke).toHaveBeenCalledWith('registerPlayer', expect.objectContaining({ country: 'Canada' }))
+  })
+
+  it('offers ASCII country names and submits the chosen spelling unchanged', async () => {
+    authenticated = true
+    invoke.mockResolvedValueOnce({ ...player, country: "Cote d'Ivoire" })
+    render(<App />)
+    await selectCountry("Cote d'Ivoire")
+    expect(screen.getByRole('button', { name: /Choose your country \/ region/ })).toHaveTextContent("Cote d'Ivoire")
+    await chooseSpell()
+    await screen.findByRole('region', { name: 'Your adventurer is ready' })
+    expect(invoke).toHaveBeenCalledWith('registerPlayer', expect.objectContaining({
+      country: "Cote d'Ivoire",
+    }))
+    expect(document.body).not.toHaveTextContent('Côte d’Ivoire')
   })
 
   it('shows nine icon-only runes and validates malformed return codes before calling the backend', async () => {
@@ -621,8 +679,11 @@ describe('adventurer codes and private item-rune spells', () => {
     expect(screen.getAllByRole('button', { name: /^Begin trivia$/ })).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Remove rune 1: Lakehouse' })).toBeDisabled()
     expect(screen.getByRole('heading', { name: 'Keep your adventurer code' })).toHaveFocus()
+    expect(screen.getByText(/Shown only here/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Begin trivia' }))
     await screen.findByRole('button', { name: 'Begin Your Quest' })
+    expect(screen.queryByRole('status', { name: 'Adventurer code' })).not.toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(player.playerCode)
     expect(track).toHaveBeenCalledWith(
       'user.register',
       {
@@ -738,6 +799,8 @@ describe('adventurer codes and private item-rune spells', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Data Pipeline' }))
     await screen.findByText('Wrong code or spell. Try again, or wait 15 minutes.')
     expect(screen.getByLabelText('Adventurer code')).toHaveValue('K482')
+    expect(screen.getByLabelText('Adventurer code')).toHaveAttribute('type', 'password')
+    expect(document.querySelector('.entry-code-lock .entry-code-cells')).toHaveTextContent('****')
     expect(screen.getByRole('group', { name: 'Item runes' }).querySelectorAll('[aria-pressed="true"]')).toHaveLength(0)
     expect(screen.queryByRole('button', { name: 'Retry verification' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: player.name })).not.toBeInTheDocument()

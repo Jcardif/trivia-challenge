@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { COUNTRIES, isCountry } from '../src/countries.js'
+import { COUNTRIES, isCountry, normalizeCountry } from '../src/countries.js'
 
 describe('approved country names', () => {
   it('uses exactly the editable TXT list for browser and backend validation', () => {
@@ -14,10 +14,38 @@ describe('approved country names', () => {
       .filter(line => line && !line.startsWith('#'))
     expect(COUNTRIES).toEqual(expected)
     expect(new Set(COUNTRIES).size).toBe(COUNTRIES.length)
-    expect(COUNTRIES.every(country => country.length <= 80 && isCountry(country))).toBe(true)
-    for (const value of ['', 'unlisted country', 'Canada, Ontario', undefined, null, 123, {}]) {
+    expect(COUNTRIES.every(country => country.length <= 80 && /^[\x20-\x7E]+$/.test(country) && isCountry(country))).toBe(true)
+    for (const value of ['', 'unlisted country', 'Canada, Ontario', 'Cánada', 'constructor', undefined, null, 123, {}]) {
       expect(isCountry(value)).toBe(false)
     }
+  })
+
+  it.each([
+    ['Åland Islands', 'Aland Islands'],
+    ['Côte d’Ivoire', "Cote d'Ivoire"],
+    ['Curaçao', 'Curacao'],
+    ['Réunion', 'Reunion'],
+    ['Saint Barthélemy', 'Saint Barthelemy'],
+    ['São Tomé and Príncipe', 'Sao Tome and Principe'],
+    ['Türkiye', 'Turkiye'],
+  ])('offers %s as %s while still accepting the saved spelling', (previous, current) => {
+    expect(COUNTRIES).toContain(current)
+    expect(COUNTRIES).not.toContain(previous)
+    expect(isCountry(previous)).toBe(true)
+    expect(isCountry(current)).toBe(true)
+    expect(normalizeCountry(previous)).toBe(current)
+    expect(normalizeCountry(current)).toBe(current)
+  })
+
+  it.each([
+    "Cote d'Ivoire",
+    'Guinea-Bissau',
+    'Cocos (Keeling) Islands',
+    'St Helena, Ascension, Tristan da Cunha',
+    'U.S. Virgin Islands',
+  ])('preserves ordinary ASCII punctuation in %s', country => {
+    expect(COUNTRIES).toContain(country)
+    expect(normalizeCountry(country)).toBe(country)
   })
 
   it.each([
@@ -26,6 +54,8 @@ describe('approved country names', () => {
     ['Canada\ncanada\n', false],
     [`${'x'.repeat(81)}\n`, false],
     ['Can\u0000ada\n', false],
+    ['Canada\nCuraçao\n', false],
+    ['Côte d’Ivoire\n', false],
   ])('generates only a valid replacement list: %j', (source, valid) => {
     const root = mkdtempSync(join(tmpdir(), 'trivia-country-generator-'))
     try {

@@ -22,19 +22,35 @@ For a new player:
 3. Selecting the third rune starts registration automatically. After the spell animation and server response, the public name and private four-character code, such as `K482`, appear. The code replaces the keypad beneath the selected runes. Reduced-motion preferences skip the animation wait.
 4. Remember the code and the three-rune sequence, then select **Begin trivia**.
 
-Returning entry is the initial view. From new-player entry, select **I already have a code**. Enter the code, then select the same three runes in the same order. Selecting the third rune checks the spell automatically and continues when it matches. A failed match displays an error and clears all three rune selections, keeping the entered code. There is no separate confirmation button. Lowercase code letters and pasted separating hyphens are normalized; leading zeros matter. The keypad stays disabled until the code is valid, and editing the code clears the spell. Connection or operator-session failures retain the spell and offer **Retry verification** instead of repeatedly retrying automatically.
+Returning entry is the initial view. From new-player entry, select **I already have a code**. Enter the code, then select the same three runes in the same order. Each entered code character appears as `*`, with no reveal control. Selecting the third rune checks the spell automatically and continues when it matches. A failed match displays an error and clears all three rune selections, keeping the code masked. There is no separate confirmation button. Lowercase code letters and pasted separating hyphens are normalized; leading zeros matter. The keypad stays disabled until the code is valid, and editing the code clears the spell. Connection or operator-session failures retain the spell and offer **Retry verification** instead of repeatedly retrying automatically.
 
-The private code is shown again on the saved results screen. Do not publish codes or spells on a leaderboard. Display names have no random numeric suffix. If a base name is already assigned, the next player receives that name followed by `2`, `3`, or the next collision number. This is part of the public display name, not another return code.
+The private code is shown only on the new-adventurer confirmation screen. Remember it before selecting **Begin trivia**; it is not displayed during gameplay or on results. Do not publish codes or spells on a leaderboard. Display names have no random numeric suffix. If a base name is already assigned, the next player receives that name followed by `2`, `3`, or the next collision number. This is part of the public display name, not another return code.
 
 Country or region is saved with the player and included in registration and gameplay analytics. It is selected manually, never inferred from GPS, IP address, or browser settings. There are no real-name, email, phone, city, or state fields. Returning players keep their saved country. Forgotten codes or spells cannot be recovered; **Start a new adventure** clears the entry form for a new identity. This also means several identities can belong to the same person.
 
-The approved country names live in [country-names.txt](../rayfin/functions/src/country-names.txt). Replace its contents with one approved country or region name per line, in the desired display order. Blank lines and `#` comments are ignored. Names must be unique ignoring case, contain no control characters, and fit within 80 UTF-16 code units. The current entries come from the application's previous country list; review or replace them before deployment. Builds generate `countryNames.generated.ts` for both the picker and server validation, without a runtime fetch. Do not edit the generated file. Keep names already assigned to players unless their records are migrated; removing or renaming a saved country can block returning entry and reject queued telemetry. Rebuild and deploy the frontend and Functions together after changing the list.
+The approved country names live in [country-names.txt](../rayfin/functions/src/country-names.txt). Replace its contents with one approved country or region name per line, in the desired display order. Blank lines and `#` comments are ignored. Names must be unique ignoring case, use printable ASCII characters, and fit within 80 characters. Ordinary apostrophes, hyphens, commas, periods, and parentheses remain supported. Builds generate `countryNames.generated.ts` for both the picker and server validation, without a runtime fetch. Do not edit the generated file. Keep names already assigned to players or add an explicit compatibility mapping; removing or renaming a saved country without one can block returning entry and reject queued telemetry. Rebuild and deploy the frontend and Functions together after changing the list.
 
 If creation is interrupted, keep the tab open and use **Retry summoning my adventurer**. The request ID, country, and spell remain fixed so a lost response does not create another identity. Reusing a creation ID with a different country is rejected. **Start over with a new adventurer instead** abandons that local retry; it cannot recover the previous code.
 
 After five failed verifications for a player, entry is blocked for the remainder of its 15-minute attempt window. A shared 60-attempts-per-minute limit also applies across stations. Wait for the relevant window rather than repeatedly retrying. An incorrect code, incorrect spell, and a temporarily blocked player do not expose the stored name.
 
 The rune artwork comes from the installed `@fabric-msft/svg-icons` package. Icons retain their original artwork, with accessible item names rather than visible captions. Selected seals and token frames provide the fantasy styling. Motion follows the browser's reduced-motion preference. Review Microsoft's [icon usage terms](https://learn.microsoft.com/en-us/fabric/fundamentals/icons) and the editable [name word banks](../rayfin/functions/src/player-name-words.txt) before publishing the experience. The implementation is not legal or trademark clearance.
+
+### ASCII country names
+
+The picker, new player records, and new telemetry use these spellings:
+
+| Previous spelling     | ASCII spelling        |
+| --------------------- | --------------------- |
+| Åland Islands         | Aland Islands         |
+| Côte d’Ivoire         | Cote d'Ivoire         |
+| Curaçao               | Curacao               |
+| Réunion               | Reunion               |
+| Saint Barthélemy      | Saint Barthelemy      |
+| São Tomé and Príncipe | Sao Tome and Principe |
+| Türkiye               | Turkiye               |
+
+Existing players can still return with an old saved spelling. The backend returns the equivalent ASCII name without changing the stored row. A separate reviewed SQL update is needed to change existing `Players.country` values. Historical Eventhouse events also keep their original values; apply this mapping in the report if old and new events must share a map label. ASCII spelling alone does not guarantee that a map recognizes a country.
 
 ## Open operator setup
 

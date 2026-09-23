@@ -109,6 +109,24 @@ describe('telemetry function validation and envelope', () => {
     }
   })
 
+  it('normalizes legacy country fields before publishing without changing other text or source events', () => {
+    const original = event({
+      event: 'user.register', type: 'user',
+      properties: { country: 'Côte d’Ivoire', nested: [{ Country: 'Türkiye' }], label: 'Curaçao' },
+      context: { country: 'Åland Islands' },
+    })
+    const [validated] = validateTelemetryBatch({ events: [original] }, NOW)
+    expect(telemetryEnvelope(validated, NOW.toISOString())).toMatchObject({
+      properties: { country: "Cote d'Ivoire", nested: [{ Country: 'Turkiye' }], label: 'Curaçao' },
+      context: { country: 'Aland Islands' },
+    })
+    expect(original.properties?.country).toBe('Côte d’Ivoire')
+    expect(original.context?.country).toBe('Åland Islands')
+    expect(() => validateTelemetryBatch({
+      events: [event({ context: { country: 'Cánada' } })],
+    }, NOW)).toThrow()
+  })
+
   it.each(EVENT_TYPES)('preserves %s with its existing envelope and attribution', (eventName, type) => {
     const original = event({ event: eventName, type })
     const [validated] = validateTelemetryBatch({ events: [original] }, NOW)
@@ -453,6 +471,23 @@ describe('browser telemetry delivery', () => {
     const nextAttendee = sender.mock.calls.at(-1)?.[0][0]
     expect(nextAttendee).not.toHaveProperty('userId')
     expect(nextAttendee?.context).not.toHaveProperty('country')
+  })
+
+  it('queues ASCII countries for saved legacy players without changing their profile', async () => {
+    const participant: User = {
+      userId: 'participant-one', playerCode: 'K042', name: 'Amber Query Weaver',
+      country: 'Côte d’Ivoire', createdAt: NOW.toISOString(),
+    }
+    service.identify(participant)
+    service.track('user.register', { country: participant.country, nested: [{ Country: 'Curaçao' }] })
+    service.track('game.start')
+    await service.flush()
+    expect(sender.mock.calls[0][0]).toMatchObject([
+      { properties: { country: "Cote d'Ivoire", nested: [{ Country: 'Curacao' }] }, context: { country: "Cote d'Ivoire" } },
+      { context: { country: "Cote d'Ivoire" } },
+    ])
+    expect(service.getDeliveryStatus()).toMatchObject({ deliveredCount: 2, droppedCount: 0 })
+    expect(participant.country).toBe('Côte d’Ivoire')
   })
 
   it('never queues contact details, player codes, spell choices, or arbitrary registration names', async () => {

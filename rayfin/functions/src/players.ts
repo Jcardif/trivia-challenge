@@ -9,7 +9,7 @@ import {
   verifyRuneSpell,
 } from './playerCredentials.js'
 import { PLAYER_CODE_CAPACITY, PLAYER_CODE_LENGTH, playerCodeAt, RUNE_CATALOG_VERSION } from './playerIdentity.js'
-import { isCountry } from './countries.js'
+import { isCountry, normalizeCountry } from './countries.js'
 import {
   date,
   id,
@@ -36,7 +36,7 @@ const PLAYER_COLUMNS =
   '[id], [playerCode], [name], [country], [runeHash], [runeVersion], [failedAttempts], [attemptWindowStartedAt], [createdAt]'
 
 function playerDto(row: SqlRow): User {
-  const country = rowText(row, 'country')
+  const country = normalizeCountry(rowText(row, 'country'))
   if (!isCountry(country)) throw new Error('Stored player country is not supported.')
   return {
     userId: rowUuid(row, 'id'),
@@ -166,7 +166,7 @@ export async function registerPlayer(ctx: RayfinContext, value: unknown): Promis
           )
           return verificationFailure()
         }
-        if (input.mode === 'new' && input.country !== rowText(existing, 'country')) {
+        if (input.mode === 'new' && input.country !== normalizeCountry(rowText(existing, 'country'))) {
           return new DomainError(
             'PLAYER_REGISTRATION_CONFLICT',
             'This registration used a different country. Retry the original registration or start a new adventure.'

@@ -1,6 +1,6 @@
 import type { CreatePoolInput, EndSessionRequest, RegisterUserRequest, SubmitAnswerRequest } from './contracts.js'
 import { DomainError } from './errors.js'
-import { isCountry } from './countries.js'
+import { isCountry, normalizeCountry } from './countries.js'
 import { GAME_RULE_DEFAULTS } from './gameRules.js'
 import { isPlayerCode, isRuneSpell, normalizePlayerCode, RUNE_CATALOG_VERSION } from './playerIdentity.js'
 
@@ -80,7 +80,7 @@ export function registrationInput(value: unknown): RegisterUserRequest {
   const spell = { runeVersion: RUNE_CATALOG_VERSION, runes: input.runes } as const
   if (input.mode === 'new') {
     if (!isCountry(input.country)) return invalid('Choose a country or region from the list.')
-    return { ...spell, mode: 'new', requestId: uuid(input.requestId, 'requestId'), country: input.country }
+    return { ...spell, mode: 'new', requestId: uuid(input.requestId, 'requestId'), country: normalizeCountry(input.country) }
   }
   if (input.mode !== 'returning') return invalid('Choose new or returning adventurer.')
   const playerCode = normalizePlayerCode(text(input.playerCode, 'Adventurer code', 12))

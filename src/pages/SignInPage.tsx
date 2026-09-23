@@ -54,17 +54,18 @@ function PlayerCodeInput({
               data-cursor={index === Math.min(selection.start, PLAYER_CODE_LENGTH - 1)}
               data-selected={index >= selection.start && index < selection.end}
             >
-              {value[index] || '-'}
+              {value[index] ? '*' : '-'}
             </span>
           ))}
         </span>
         <input
+          type="password"
           name="playerCode"
           aria-label="Adventurer code"
           aria-invalid={invalid}
           aria-describedby={invalid ? 'entry-feedback' : undefined}
           value={value}
-          placeholder="K482"
+          placeholder="****"
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
@@ -213,7 +214,7 @@ export default function SignInPage() {
     }
     if (mode === 'returning' && !isPlayerCode(playerCode)) {
       setCodeInvalid(true)
-      setError('Use one letter and three digits, like K482.')
+      setError('Use one letter and three digits.')
       setCelebrating(false)
       return
     }
@@ -322,7 +323,7 @@ export default function SignInPage() {
                     onBlur={() => {
                       if (playerCode && !isPlayerCode(playerCode)) {
                         setCodeInvalid(true)
-                        setError('Use one letter and three digits, like K482.')
+                        setError('Use one letter and three digits.')
                       }
                     }}
                   />
@@ -420,7 +421,9 @@ export default function SignInPage() {
                         </span>
                       ))}
                     </output>
-                    <p id="entry-code-reminder">Keep this code and your 3-rune spell to return.</p>
+                    <p id="entry-code-reminder">
+                      Shown only here. Keep this code and your 3-rune spell private to return.
+                    </p>
                   </div>
                 </section>
               ) : (
