@@ -1,4 +1,4 @@
-import { AudienceType, type RayfinContext } from '@microsoft/fabric-user-data-functions'
+import type { RayfinContext } from '@microsoft/fabric-user-data-functions'
 import { Connection, Request, TYPES } from 'tedious'
 
 export type SqlRow = Record<string, unknown>
@@ -110,14 +110,19 @@ export function* insertBatches(
 }
 
 export async function withSql<T>(ctx: RayfinContext, action: (sql: SqlSession) => Promise<T>): Promise<T> {
-  const server = ctx.getSecret('TRIVIA_SQL_SERVER')
-  const database = ctx.getSecret('TRIVIA_SQL_DATABASE')
-  if (!server || !database) throw new Error('Server-only SQL configuration is missing.')
+  const server = ctx.getSecret('TRIVIA_SQL_SERVER')?.trim()
+  const database = ctx.getSecret('TRIVIA_SQL_DATABASE')?.trim()
+  const tenantId = ctx.getSecret('TRIVIA_SQL_TENANT_ID')?.trim()
+  const clientId = ctx.getSecret('TRIVIA_SQL_CLIENT_ID')?.trim()
+  const clientSecret = ctx.getSecret('TRIVIA_SQL_CLIENT_SECRET')
+  if (!server || !database || !tenantId || !clientId || !clientSecret?.trim()) {
+    throw new Error('Server-only SQL application-identity configuration is missing.')
+  }
   const connection = new Connection({
     server,
     authentication: {
-      type: 'azure-active-directory-access-token',
-      options: { token: ctx.getToken(AudienceType.Sql) },
+      type: 'azure-active-directory-service-principal-secret',
+      options: { tenantId, clientId, clientSecret },
     },
     options: {
       database, port: 1433, encrypt: true, trustServerCertificate: false,

@@ -11,6 +11,8 @@ Complete [deployment](deployment.md) and [question import](questions.md) before 
 
 The operator signs in once per browser session. Attendees use the adventurer entry screen and do not need Fabric accounts.
 
+Each operator uses their own Fabric account with permission to run the same deployed app. The backend uses a separate application identity for SQL, so operators do not enter or share a database credential. All stations still use the same database and Eventstream. Assign each kiosk its own station ID for the shared scoreboard.
+
 ## Enter as an adventurer
 
 For a new player:
@@ -107,6 +109,8 @@ Removing contact fields from the application does not erase information collecte
 | An import reports row errors | Follow the [CSV error reference](questions.md#limits-and-errors). |
 | The result is still saving | Keep the tab open. Retry failed writes before handing the station to another player. |
 | Operator authentication expires | Sign in again in the same tab, then retry the pending save. |
+| Sign-in works, but SQL operations fail on every station | Ask the deployment owner to check the backend application credential, its expiry, and SQL permissions. Signing an operator in again does not renew the application's client secret. Keep tabs with pending writes open. |
+| Fabric says the app is intended only for its builder because of SSO Functions | Ask the deployment owner to follow [Switch SQL authentication](deployment.md#switch-sql-authentication). Extra SQL permissions for the operator do not remove an app sign-in restriction. |
 | A code and spell cannot be verified | Check the code, leading zeros, and exact rune order. Wait after repeated failures; create a new adventurer if the credentials are forgotten. |
 | Creation failed after submitting | Retry the same creation request in the open tab to recover an already-created identity. |
 | Telemetry is queued or dropped | After the current game is saved, open `/operator` to inspect delivery status and follow the [telemetry guide](telemetry-events.md). |

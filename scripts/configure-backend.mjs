@@ -18,6 +18,15 @@ const target = await resolveDeploymentTarget({
 const { workspaceId, appId, itemEndpoint } = target
 const sqlId = requireUuid(values['sql-database-id'], 'sql-database-id')
 const eventstreamId = requireUuid(values['eventstream-id'], 'eventstream-id')
+const sqlTenantId = requireUuid(process.env.TRIVIA_SQL_TENANT_ID, 'TRIVIA_SQL_TENANT_ID').toLowerCase()
+const sqlClientId = requireUuid(process.env.TRIVIA_SQL_CLIENT_ID, 'TRIVIA_SQL_CLIENT_ID').toLowerCase()
+const sqlClientSecret = process.env.TRIVIA_SQL_CLIENT_SECRET
+if (!sqlClientSecret?.trim()) {
+  throw new Error('TRIVIA_SQL_CLIENT_SECRET is required in the local environment, not a command-line argument.')
+}
+if (!target.tenantId || sqlTenantId !== target.tenantId.toLowerCase()) {
+  throw new Error('The SQL application tenant must match the active Rayfin deployment tenant.')
+}
 const api = await createFabricApi({ target })
 const base = `workspaces/${workspaceId}`
 const { body: database } = await api.request(`${base}/sqlDatabases/${sqlId}`)
@@ -53,6 +62,9 @@ const configured = await applySecretsToRemoteEndpoint({
   secrets: [
     { name: 'TRIVIA_SQL_SERVER', value: server },
     { name: 'TRIVIA_SQL_DATABASE', value: database.properties.databaseName },
+    { name: 'TRIVIA_SQL_TENANT_ID', value: sqlTenantId },
+    { name: 'TRIVIA_SQL_CLIENT_ID', value: sqlClientId },
+    { name: 'TRIVIA_SQL_CLIENT_SECRET', value: sqlClientSecret },
     { name: 'TRIVIA_EVENTHUB_CONNECTION_STRING', value: connectionString },
   ],
 })

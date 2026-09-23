@@ -13,6 +13,7 @@ Use Node.js 24 and npm. Open a terminal in the repository root, where `package.j
 | Workloads | Access to Rayfin, its Functions and SQL services, Eventstream, and Eventhouse in the target tenant and region. |
 | Permissions | Permission to create and update the application and analytics items. SQL database creation requires workspace Member or Admin permissions. |
 | Operator account | A Fabric account authorized to run the deployed application. This account signs in on the kiosk; attendees do not need Fabric accounts. |
+| SQL application identity | A single-tenant Entra app registration, permission to grant it SQL access, and approval to use a backend client secret. A Fabric administrator must allow this service principal through the relevant tenant setting. |
 
 See Microsoft's [Fabric capacity documentation](https://learn.microsoft.com/fabric/enterprise/licenses#capacity) and [SQL database prerequisites](https://learn.microsoft.com/fabric/database/sql/create#prerequisites).
 
@@ -111,23 +112,63 @@ In Fabric, open the Eventstream and confirm that its `TriviaEventhouseData` dest
 
 The script reuses resources that it owns. It refuses name collisions with unrelated items and does not overwrite existing definitions. Use separate workspaces for independent deployments; these analytics names are fixed.
 
+If Git sync has already restored the analytics items, skip provisioning. Set `EVENTSTREAM_ID` to the existing Eventstream's ID. It must contain exactly one `CustomEndpoint` source named `TriviaApp`, connected to the intended running Eventhouse destination. Step 5 reads its publisher credentials without creating items or changing its topology.
+
 ## 5. Configure the backend
 
+### Register and authorize the SQL identity
+
+Operator sign-in and SQL authentication are separate. Operators keep their own Fabric accounts. The Functions use one Entra application identity to connect to the shared SQL database.
+
+1. In the [Entra admin center](https://entra.microsoft.com/), switch to the deployment tenant. Open **Entra ID > App registrations > New registration**. Create a dedicated single-tenant app, such as `trivia-sql-backend`, without a redirect URI. Record its **Directory (tenant) ID** and **Application (client) ID**.
+2. Open that registration's **Certificates & secrets > Client secrets > New client secret**. Choose an expiry approved by your organization. Copy the **Value**, not the Secret ID, and record its expiry in the team's credential store. This implementation uses a client secret; Microsoft recommends certificate or federated credentials for long-lived production use. If your policy prohibits client secrets, stop rather than placing a different credential type in this setting.
+3. Ask the Fabric administrator to allow the service principal through **Service principals can call Fabric public APIs**, also named **Service principals can use Fabric APIs** in some environments. Include it in the allowed security group rather than enabling access for the entire organization.
+4. On the application's SQL database child item, use **Share** or **Manage permissions** to give the application **Read** item permission. Leave additional permissions, including **Read all data**, off. Do not use the KQL database or SQL analytics endpoint.
+5. Connect to that SQL database as an authorized database administrator using SSMS or the MSSQL extension for VS Code. The Rayfin child item's portal editor is read-only. Review [grant-sql-identity.sql](../scripts/grant-sql-identity.sql), replace `<application-client-id>` with the client ID from step 1, and run it. This creates an external database user and grants the required reads, inserts, and updates on the nine application tables. It does not grant `db_owner`, schema changes, deletes, or access to Rayfin's authentication tables.
+6. Confirm each kiosk operator has **Run and interact** access to the Fabric app. They do not need this application credential. Item permission changes can take up to two hours to take effect.
+
+Fabric item Read permission and SQL table grants are separate requirements. See [SQL authentication](https://learn.microsoft.com/fabric/database/sql/authentication), [database sharing](https://learn.microsoft.com/fabric/database/sql/share-sql-manage-permission), and [Entra application credentials](https://learn.microsoft.com/entra/identity-platform/how-to-add-credentials).
+
+### Upload the backend settings
+
+Create a local credential file with owner-only permissions:
+
 ```bash
-node scripts/configure-backend.mjs \
+umask 077
+touch .env.sql-auth.local
+chmod 600 .env.sql-auth.local
+```
+
+In a local editor, add these values to `.env.sql-auth.local`. This file is Git-ignored. Do not put credentials in `.env.example`, chat, command-line arguments, or any `VITE_*` setting.
+
+```dotenv
+TRIVIA_SQL_TENANT_ID=<deployment-tenant-id>
+TRIVIA_SQL_CLIENT_ID=<application-client-id>
+TRIVIA_SQL_CLIENT_SECRET="<client-secret-value>"
+```
+
+Then upload the backend settings:
+
+```bash
+node --env-file=.env.sql-auth.local scripts/configure-backend.mjs \
   --sql-database-id "$SQL_DATABASE_ID" \
   --eventstream-id "$EVENTSTREAM_ID"
 ```
 
-The script uses the active Rayfin deployment registry entry, verifies the sign-in tenant matches that entry, resolves the SQL connection information and Eventstream publisher credential, and writes these values to the backend secret store:
+The script requires all three application settings before contacting Fabric. It checks that the application's tenant matches the active deployment, verifies the deployment account's sign-in tenant, resolves the SQL connection information and existing Eventstream publisher credential, and writes these values to the backend secret store:
 
 | Setting | Purpose |
 | --- | --- |
 | `TRIVIA_SQL_SERVER` | Fabric SQL hostname |
 | `TRIVIA_SQL_DATABASE` | Application database name |
+| `TRIVIA_SQL_TENANT_ID` | Entra tenant containing the backend application |
+| `TRIVIA_SQL_CLIENT_ID` | Backend application's client ID |
+| `TRIVIA_SQL_CLIENT_SECRET` | Private application credential used to obtain a SQL token |
 | `TRIVIA_EVENTHUB_CONNECTION_STRING` | Private Eventstream publisher connection, including `EntityPath` |
 
-The output lists configured setting names without exposing their values. SQL uses a token supplied by the Functions host, not a stored SQL password. Keep backend settings out of `VITE_*` variables and source control.
+The output lists configured setting names without exposing their values. The SQL driver obtains a token for the application identity. It does not use the operator's SQL token or SQL username/password authentication. The uploader updates named secrets without removing other backend settings. Secret updates are separate requests; if one fails, resolve the error and rerun the command before opening the kiosks.
+
+Rotate the client secret before it expires. Capture a replacement, update the protected local file, rerun this upload, and verify a saved game before revoking the old secret. Secret rotation does not require a code change. Keep the local credential file only as long as your approved credential-management process requires.
 
 ## 6. Load questions and run a game
 
@@ -138,9 +179,19 @@ The output lists configured setting names without exposing their values. SQL use
 5. Return to registration, complete a game, and wait for its saved result.
 6. Follow [Confirm telemetry delivery](telemetry-events.md#confirm-delivery) to check that the game events reached Eventhouse.
 
-The deployment is ready for a kiosk when registration, question loading, saved results, and telemetry delivery work in that environment. Configure the station using [Run a kiosk](operations.md).
+Repeat sign-in and a saved game with a non-builder operator in a private browser window. Then check each kiosk operator's own account and station. Confirm their results reach the existing shared scoreboard. Deployment health and a successful builder login do not prove that other operators can sign in.
+
+The deployment is ready for a kiosk when operator sign-in, registration, question loading, saved results, and telemetry delivery work in that environment. Configure the station using [Run a kiosk](operations.md).
 
 ## Update an existing deployment
+
+### Switch SQL authentication
+
+Older Functions declared SQL SSO connections and used the executing operator's SQL token. Configure the application identity and permissions from step 5 before deploying this version. Then run the full deployment from step 3 to replace the Function connection metadata as well as the code. Uploading credentials alone does not remove the old SSO declarations.
+
+There is no fallback to operator SQL SSO. Missing, expired, or unauthorized application credentials block SQL operations for every station. Keep the existing database and analytics items; do not create a separate deployment per operator.
+
+If Fabric displayed a builder-only SSO warning, verify that it disappears for a non-builder operator after deployment. This change removes the app's delegated SQL dependency, but a local build cannot establish whether the Fabric sign-in restriction has cleared.
 
 ### Review the contact-free player schema
 
@@ -173,7 +224,8 @@ Review any destructive schema change before using `--force`. Routine deployment 
 | A helper reports that no active deployment is selected | Run `npx rayfin up list`, then `npx rayfin up switch <workspace>` to select the intended registry entry. |
 | A helper refuses the Fabric API URL | Redeploy or switch to the intended workspace to refresh its registry entry. Confirm that `fabricDeepLink` identifies the correct Fabric environment, workspace, and app. Do not replace a regional workload URL with a REST API URL. |
 | A helper reports a tenant mismatch | Run `npx rayfin login --tenant <deployment-tenant-id>` for the active deployment before configuring analytics or backend secrets. |
-| Question imports or registration fail with SQL errors | Confirm that `SQL_DATABASE_ID` belongs to this app and that step 5 completed. |
+| Question imports or registration fail with SQL errors | Confirm that `SQL_DATABASE_ID` belongs to this app, all application settings are present, the client secret is valid, and the service principal has both SQL item Read and the table grants from step 5. |
+| Fabric reports a builder-only app because its Functions use SSO | Confirm the updated Functions and connection metadata were deployed, not just the backend secrets. Try a fresh non-builder session. If the same banner remains, stop and collect a redacted error for the Fabric owner; do not widen database permissions as a substitute for resolving app sign-in. |
 | Telemetry destination is not running | Inspect the Eventstream destination in Fabric and follow the [telemetry guide](telemetry-events.md#confirm-delivery). |
 | Localhost reports unsupported Fabric sign-in | Use the deployed hosting URL. Local gameplay is not supported. |
 
