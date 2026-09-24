@@ -1,8 +1,8 @@
 import { describe, expect, it } from '@jest/globals'
 import {
   applyAnswerRules, GAME_RULE_DEFAULTS, initialStats, replayAnswer, scoreAnswer, seededRandom,
-  shuffle, shuffleChoices, summarizeAnswers, timeRemainingAfterAnswer, verifyEndCounters, verifyImportReplay,
-  verifyStartReplay,
+  shuffle, shuffleChoices, summarizeAnswers, timeRemainingAfterAnswer, verifyEndCounters, verifyHeartsRemain,
+  verifyImportReplay, verifyStartReplay,
 } from '../src/game.js'
 import { DomainError } from '../src/errors.js'
 
@@ -100,6 +100,16 @@ describe('game calculations', () => {
     } catch (error: unknown) {
       expect(error).toMatchObject({ code: 'SESSION_NOT_READY', retryable: true })
     }
+  })
+
+  it('rejects further answers once the saved hearts reach the minimum', () => {
+    const lastHeart = summarizeAnswers(Array<boolean>(9).fill(false))
+    expect(lastHeart.heartsHalfUnits).toBe(1)
+    expect(() => verifyHeartsRemain(lastHeart)).not.toThrow()
+    const depleted = scoreAnswer(lastHeart, false)
+    expect(depleted.heartsHalfUnits).toBe(0)
+    expect(() => verifyHeartsRemain(depleted)).toThrow(new DomainError('CONFLICT', 'Session has no hearts remaining.'))
+    expect(() => verifyHeartsRemain(scoreAnswer(depleted, true))).toThrow('no hearts remaining')
   })
 })
 

@@ -1,6 +1,6 @@
 import type { EndSessionRequest, SubmitAnswerRequest, SubmitAnswerResponse } from './contracts.js'
 import { DomainError } from './errors.js'
-import type { GameStats } from './gameRules.js'
+import { GAME_RULE_DEFAULTS, heartsToHalfUnits, type GameRuleSettings, type GameStats } from './gameRules.js'
 
 export {
   accuracyPercentage, applyAnswerRules, GAME_RULE_DEFAULTS, halfUnitsToHearts, heartsToHalfUnits,
@@ -17,6 +17,12 @@ export function verifyEndCounters(input: EndSessionRequest, stats: GameStats, al
       input.streaksCompleted !== stats.streaksCompleted ||
       input.heartsRemaining * 2 !== stats.heartsHalfUnits) {
     throw new DomainError('CONFLICT', 'Completion counters do not match the saved answers.')
+  }
+}
+
+export function verifyHeartsRemain(stats: GameStats, settings: GameRuleSettings = GAME_RULE_DEFAULTS): void {
+  if (stats.heartsHalfUnits <= heartsToHalfUnits(settings.hearts.minimum)) {
+    throw new DomainError('CONFLICT', 'Session has no hearts remaining.')
   }
 }
 

@@ -6,7 +6,7 @@ import type {
 import { DomainError } from './errors.js'
 import {
   accuracyPercentage, applyAnswerRules, initialStats, replayAnswer, seededRandom, shuffle, shuffleChoices,
-  summarizeAnswers, verifyEndCounters, verifyStartReplay, type GameStats,
+  summarizeAnswers, verifyEndCounters, verifyHeartsRemain, verifyStartReplay, type GameStats,
 } from './game.js'
 import {
   bit, date, id, int, rowBoolean, rowDate, rowNumber, rowOptionalText, rowText, rowUuid, str, withSql,
@@ -183,13 +183,15 @@ export async function submitAnswer(ctx: RayfinContext, value: unknown): Promise<
       }, input)
     }
     if (rowText(session, 'status') !== 'active') throw new DomainError('CONFLICT', 'Session is no longer active.')
+    const savedStats = sessionStats(session)
+    verifyHeartsRemain(savedStats)
     const [question] = await transaction.query(
       'SELECT [correctAnswerIndex] FROM [dbo].[SessionQuestions] WHERE [id] = @question AND [session_id] = @session;',
       { question: id(input.questionId), session: id(input.sessionId) },
     )
     if (!question) throw new DomainError('NOT_FOUND', 'Question not found in this session.')
     const correct = input.answerIndex === rowNumber(question, 'correctAnswerIndex')
-    const result = applyAnswerRules(sessionStats(session), correct)
+    const result = applyAnswerRules(savedStats, correct)
     const stats = result.stats
     const pointsEarned = result.pointsEarned
     await transaction.insert('GameSessionAnswers',

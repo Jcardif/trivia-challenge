@@ -138,7 +138,7 @@ Session and import requests retain their identifiers across retries. Accepted an
 
 The browser gives `submitAnswer` and `endSession` 30 seconds per attempt. `GameWrites` sends answers serially and makes at most three attempts, with 0.5-second and 1-second backoff, before offering manual retry. Timing out does not cancel server execution. The same request payload is retained for idempotent retry. Other Functions keep the SDK's 250-second default timeout, including imports and session creation.
 
-Per-session SQL locks serialize answers and completion. The frontend waits for pending answers before requesting completion. The backend returns retryable `SESSION_NOT_READY` when the requested completion counters are not yet persisted.
+Per-session SQL locks serialize answers and completion. `submitAnswer` rejects new answers after the saved hearts reach zero, even before `endSession` runs; a retry of an accepted answer still returns its saved score. The frontend waits for pending answers before requesting completion. The backend returns retryable `SESSION_NOT_READY` when the requested completion counters are not yet persisted.
 
 Imports validate all rows before committing. The operator preview shows destination counts, missing display pools, and previous imports of the exact file. Explicitly requested pool creation shares the import transaction. Existing pool metadata is preserved, including pools another operator creates after the preview.
 
