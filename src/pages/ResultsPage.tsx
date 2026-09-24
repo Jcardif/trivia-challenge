@@ -202,7 +202,6 @@ export default function ResultsPage() {
   )
 
   const playerName = (player?.name ?? '').trim()
-  const playerFirstName = playerName.split(/\s+/)[0] || player?.name || 'Player'
   const playerDisplayName = playerName || player?.name || 'Player'
   const sessionTag = session?.sessionId ? session.sessionId.slice(0, 8).toUpperCase() : '--------'
   const failedQuestions = missedQuestions
@@ -211,44 +210,44 @@ export default function ResultsPage() {
   const accuracyFeedback = useMemo(() => {
     if (accuracy >= 95) {
       return {
-        title: `Legendary accuracy, ${playerFirstName}!`,
+        title: `Legendary accuracy, ${playerDisplayName}!`,
         message: 'Every tap landed perfectly. The leaderboard should be nervous about your next run.',
       }
     }
 
     if (accuracy >= 85) {
       return {
-        title: `Elite run, ${playerFirstName}.`,
+        title: `Elite run, ${playerDisplayName}.`,
         message: 'You read the board like a pro and kept the streak meter glowing. Another game could put you on top.',
       }
     }
 
     if (accuracy >= 70) {
       return {
-        title: `Great rhythm, ${playerFirstName}!`,
+        title: `Great rhythm, ${playerDisplayName}!`,
         message: 'Smart calls and solid pace—one more push and those streak bonuses are yours for the taking.',
       }
     }
 
     if (accuracy >= 50) {
       return {
-        title: `Solid hustle, ${playerFirstName}.`,
+        title: `Solid hustle, ${playerDisplayName}.`,
         message: 'You kept the momentum alive. Sharpen a couple answers and you will turbocharge your score.',
       }
     }
 
     return {
-      title: `Bold effort, ${playerFirstName}!`,
+      title: `Bold effort, ${playerDisplayName}!`,
       message: 'You kept swinging and learned the terrain. Queue up another round and turn those insights into streaks.',
     }
-  }, [accuracy, playerFirstName])
+  }, [accuracy, playerDisplayName])
 
   const heartsFeedback = useMemo(
     () => ({
-      title: `Sorry, ${playerFirstName}.`,
+      title: `Sorry, ${playerDisplayName}.`,
       message: 'You ran out of hearts 💔. Review the questions you missed and jump back in for another run.',
     }),
-    [playerFirstName]
+    [playerDisplayName]
   )
 
   const heroFeedback = heartsDepleted ? heartsFeedback : accuracyFeedback

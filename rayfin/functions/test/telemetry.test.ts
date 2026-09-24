@@ -101,7 +101,7 @@ describe('telemetry function validation and envelope', () => {
   it('accepts generated aliases and approved countries without accepting fingerprint fields', () => {
     expect(validateTelemetryBatch({
       events: [event({ event: 'user.register', type: 'user', properties: {
-        name: 'Amber Query Weaver', country: 'Canada', entryMode: 'new',
+        name: 'Amber Query Crafter', country: 'Canada', entryMode: 'new',
       }, context: { country: 'Canada' } })],
     }, NOW)).toHaveLength(1)
     for (const field of ['userAgent', 'viewport', 'screen', 'language']) {
@@ -430,7 +430,7 @@ describe('browser telemetry delivery', () => {
 
   it('snapshots attendee, session, pool, station, payload and event ID before retries', async () => {
     const participant: User = {
-      userId: 'participant-one', playerCode: 'K4827', name: 'Amber Query Weaver',
+      userId: 'participant-one', playerCode: 'K4827', name: 'Amber Query Crafter',
       country: 'Canada',
       createdAt: NOW.toISOString(),
     }
@@ -475,7 +475,7 @@ describe('browser telemetry delivery', () => {
 
   it('queues ASCII countries for saved legacy players without changing their profile', async () => {
     const participant: User = {
-      userId: 'participant-one', playerCode: 'K042', name: 'Amber Query Weaver',
+      userId: 'participant-one', playerCode: 'K042', name: 'Amber Query Crafter',
       country: 'Côte d’Ivoire', createdAt: NOW.toISOString(),
     }
     service.identify(participant)
@@ -496,10 +496,10 @@ describe('browser telemetry delivery', () => {
       { nested: { runes: ['lakehouse', 'warehouse', 'notebook'] } }, { name: 'Real Person' },
       { country: 'Canada, Ontario' }, { nested: { city: 'Toronto' } },
     ]) service.track('user.register', properties)
-    service.track('user.register', { name: 'Amber Query Weaver', country: 'Canada', entryMode: 'returning' })
+    service.track('user.register', { name: 'Amber Query Crafter', country: 'Canada', entryMode: 'returning' })
     await service.flush()
     expect(service.getDeliveryStatus()).toMatchObject({ droppedCount: 6, deliveredCount: 1 })
-    expect(sender.mock.calls[0][0][0].properties).toEqual({ name: 'Amber Query Weaver', country: 'Canada', entryMode: 'returning' })
+    expect(sender.mock.calls[0][0][0].properties).toEqual({ name: 'Amber Query Crafter', country: 'Canada', entryMode: 'returning' })
     expect(JSON.stringify(warn.mock.calls)).not.toMatch(/person@example|K4827|Real Person|lakehouse/)
   })
 

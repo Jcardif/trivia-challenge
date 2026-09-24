@@ -1,40 +1,82 @@
 # Adventurer name words. Builds generate the shared browser/Functions word lists from this file.
 # One entry per line. Keep both section headings; blank lines and # comments are allowed.
-# Names combine one prefix and one title. Collisions add 2, 3, 4, etc., not random digits.
+# Names combine one adjective prefix and one title. Collisions add 2, 3, 4, etc., not random digits.
 # These words have not been given legal or trademark clearance.
 
 [prefixes]
 Amber
-Astral
-Copper
-Crystal
-Ember
-Jade
-Lunar
-Moss
-Opal
-Quartz
 Silver
-Solar
-Velvet
-Violet
-Cobalt
 Golden
+Violet
+Rosy
+Sunny
+Starry
+Lunar
+Misty
+Leafy
+Relaxed
+Rainy
+Glowing
+Gentle
+Quiet
+Steady
+Happy
+Jolly
+Cozy
+Tidy
+Hopeful
+Cool
+Eager
+Lively
+Humble
+Loyal
+Polite
+Friendly
+Early
+Strong
+Careful
+Cheerful
+Peaceful
+Thankful
+Generous
+Caring
+Pleasant
 
 [titles]
-Query Weaver
-Schema Sage
-Index Keeper
-Delta Seeker
-Pipeline Pathfinder
-Lakehouse Voyager
-Stream Warden
-Data Artificer
+Query Crafter
+Query Writer
+Query Helper
+Schema Modeler
+Schema Planner
+Schema Guide
+Index Reader
+Index Finder
+Eventstream Sailor
+Eventstream Pilot
+Eventstream Listener
+Measure Maker
+Report Designer
+Report Reviewer
+Report Storyteller
+Lakehouse Builder
+Lakehouse Gardener
+Lakehouse Guide
+Dashboard Designer
+Dashboard Dreamer
 Warehouse Wanderer
-Notebook Nomad
-Query Alchemist
-Query Ranger
-Schema Shaper
-Index Scribe
-Delta Navigator
-Data Druid
+Warehouse Architect
+Pipeline Planner
+Pipeline Mechanic
+Pipeline Helper
+Notebook Writer
+Notebook Reader
+Metric Mapper
+Metric Watcher
+Chart Artist
+Batch Mover
+Vector Mapper
+Catalog Reader
+Row Counter
+Join Juggler
+Formula Planner
+Column Counter

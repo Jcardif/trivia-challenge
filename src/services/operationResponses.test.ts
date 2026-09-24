@@ -4,11 +4,11 @@ import { operationResponseValidators as validate } from './operationResponses'
 describe('Function response validation', () => {
   it('accepts generated identities but rejects contact data and private spell fields', () => {
     const player = {
-      userId: 'player', name: 'Amber Query Weaver', playerCode: 'K042', country: 'Canada', createdAt: '2026-09-21T00:00:00Z',
+      userId: 'player', name: 'Amber Query Crafter', playerCode: 'K042', country: 'Canada', createdAt: '2026-09-21T00:00:00Z',
     }
     expect(validate.registerPlayer(player)).toBe(true)
-    expect(validate.registerPlayer({ ...player, name: 'Amber Query Weaver 2' })).toBe(true)
-    expect(validate.registerPlayer({ ...player, name: 'Amber Query Weaver 02' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, name: 'Amber Query Crafter 2' })).toBe(true)
+    expect(validate.registerPlayer({ ...player, name: 'Amber Query Crafter 02' })).toBe(false)
     expect(validate.registerPlayer({ ...player, name: 'Real Person' })).toBe(false)
     expect(validate.registerPlayer({ ...player, playerCode: 'K42' })).toBe(false)
     expect(validate.registerPlayer({ ...player, country: undefined })).toBe(false)

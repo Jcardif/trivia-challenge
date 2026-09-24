@@ -68,7 +68,7 @@ jest.unstable_mockModule('./services/analyticsService', () => ({
 }))
 
 const { default: App } = await import('./App')
-const player = { userId: 'player-1', name: 'Amber Query Weaver', playerCode: 'K482', country: 'Canada', createdAt: '2026-09-10T00:00:00Z' }
+const player = { userId: 'player-1', name: 'Amber Query Crafter', playerCode: 'K482', country: 'Canada', createdAt: '2026-09-10T00:00:00Z' }
 const pool = { id: 'fabric', name: 'Fabric', iconPath: '/pools/default.svg', isActive: true, displayOrder: 0 }
 const originalFetch = globalThis.fetch
 

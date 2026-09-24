@@ -80,11 +80,11 @@ describe('adventurer identity rules', () => {
       expect(isGeneratedPlayerName(name)).toBe(true)
       expect(bases.has(name)).toBe(true)
     }
-    expect(isGeneratedPlayerName('Amber Query Weaver')).toBe(true)
-    expect(isGeneratedPlayerName('Amber Query Weaver 2')).toBe(true)
-    expect(isGeneratedPlayerName('Amber Query Weaver 10')).toBe(true)
+    expect(isGeneratedPlayerName('Amber Query Crafter')).toBe(true)
+    expect(isGeneratedPlayerName('Amber Query Crafter 2')).toBe(true)
+    expect(isGeneratedPlayerName('Amber Query Crafter 10')).toBe(true)
     for (const suffix of ['1', '0', '02', '-2', '2.5', '2e3', '2147483648']) {
-      expect(isGeneratedPlayerName(`Amber Query Weaver ${suffix}`)).toBe(false)
+      expect(isGeneratedPlayerName(`Amber Query Crafter ${suffix}`)).toBe(false)
     }
     expect(isGeneratedPlayerName('Person Name')).toBe(false)
     expect(isGeneratedPlayerName('person@example.invalid')).toBe(false)
