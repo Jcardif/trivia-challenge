@@ -39,6 +39,7 @@ describe('SQL transaction transport', () => {
       return 42
     })).resolves.toBe(42)
     expect(calls).toEqual(['settings', 'begin', 'query', 'commit'])
+    expect(session.reusable).toBe(true)
     expect(batch.mock.calls[0][0].sqlTextOrProcedure).toBe('SET XACT_ABORT ON; SET LOCK_TIMEOUT 60000;')
     expect(query.mock.calls[0][0].parametersByName.value.value).toBe('parameterized value')
   })
@@ -48,6 +49,7 @@ describe('SQL transaction transport', () => {
     const failure = new Error('The import failed.')
     await expect(session.transaction(async () => { throw failure })).rejects.toBe(failure)
     expect(calls).toEqual(['settings', 'begin', 'rollback'])
+    expect(session.reusable).toBe(true)
   })
 
   it('rolls back a failed commit and preserves that error', async () => {
@@ -70,6 +72,18 @@ describe('SQL transaction transport', () => {
     await expect(second.session.transaction(action)).rejects.toBe(failure)
     expect(action).not.toHaveBeenCalled()
     expect(second.rollback).not.toHaveBeenCalled()
+    expect(second.session.reusable).toBe(false)
+  })
+
+  it('is not reusable while a query is still running', async () => {
+    const { session, query } = setup()
+    let finish: (() => void) | undefined
+    query.mockImplementationOnce(request => { finish = () => request.callback(null, 0) })
+    const running = session.query('SELECT 1;')
+    expect(session.reusable).toBe(false)
+    finish?.()
+    await running
+    expect(session.reusable).toBe(true)
   })
 
   it('closes the connection when rollback fails without hiding the original error', async () => {
@@ -80,6 +94,7 @@ describe('SQL transaction transport', () => {
     try {
       await expect(session.transaction(async () => { throw failure })).rejects.toBe(failure)
       expect(close).toHaveBeenCalledTimes(1)
+      expect(session.reusable).toBe(false)
       expect(log).toHaveBeenCalledWith('SQL rollback failed; closing the connection to discard uncommitted work.')
     } finally {
       log.mockRestore()

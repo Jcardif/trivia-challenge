@@ -90,7 +90,11 @@ Every application entity declares one authenticated Data API read grant with an 
 
 The SQL hostname, database, tenant ID, client ID, and client secret are backend settings. The driver obtains the application's SQL token. Functions do not declare delegated SQL connections or request an operator SQL token. Missing application credentials fail explicitly, without an operator-SSO fallback.
 
-Each invocation reads and validates the settings. A warm worker reuses one `ClientSecretCredential` while its tenant, client ID, and secret remain unchanged, allowing the SDK to reuse valid tokens. A setting change replaces that credential; invalid settings clear the cache. A failed SQL login discards its credential if it is still current. Concurrent invocations on a cold worker can each request a token. SQL connections still open and close per invocation; this is not connection pooling.
+Each invocation reads and validates the settings. A warm worker reuses one `ClientSecretCredential` while its tenant, client ID, and secret remain unchanged, allowing the SDK to reuse valid tokens. A setting change replaces that credential; invalid settings clear the cache. A failed SQL login discards its credential if it is still current. Concurrent invocations on a cold worker can each request a token.
+
+Each warm worker keeps one SQL connection pool for the current server, database, and credential. The limits are in `SQL_POOL_LIMITS` in `rayfin/functions/src/sql.ts`: at most 10 connections, a 60-second wait for a free connection, a five-minute idle timeout, and a 30-minute maximum age. Before reuse, the pool resets the connection with `sp_reset_connection`, which restores fresh-login session settings and confirms the connection still works. A connection that fails that check, reports an error, or ends is replaced.
+
+The pool records the expiry of the Entra token used for each login and stops reusing a connection five minutes before that token expires. It also discards a connection whose invocation left a request or transaction unfinished. A settings change or invalid settings retire the pool; idle connections close at once and in-use connections close when their invocation finishes.
 
 Every operator uses the same backend SQL identity and shared database. Operators do not receive the credential or gain per-operator SQL privileges. The setup script grants access only to the application tables; see [Deployment](deployment.md#register-and-authorize-the-sql-identity).
 

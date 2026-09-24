@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals'
-import { ClientSecretCredential } from '@azure/identity'
+import { ClientSecretCredential, type AccessToken } from '@azure/identity'
 import { RayfinContext } from '@microsoft/fabric-user-data-functions'
 import { Connection } from 'tedious'
 
@@ -11,7 +11,7 @@ class RecordingCredential extends ClientSecretCredential {
   }
 }
 jest.unstable_mockModule('@azure/identity', () => ({ ClientSecretCredential: RecordingCredential }))
-const { withSql } = await import('../src/sql.js')
+const { closeSqlPool, LoginTokenCredential, SQL_POOL_LIMITS, withSql } = await import('../src/sql.js')
 
 const missingConfiguration = 'Server-only SQL application-identity configuration is missing.'
 const secrets = {
@@ -46,30 +46,60 @@ function context(values: Secrets = secrets) {
   return ctx
 }
 
-function credentialOf(connection: Connection) {
+const sqlScope = 'https://database.windows.net/.default'
+const minute = 60_000
+
+function loginTokenOf(connection: Connection) {
   const { authentication } = connection.config
   if (authentication.type !== 'token-credential') throw new Error(`Unexpected ${authentication.type} SQL authentication.`)
-  return authentication.options.credential
+  const { credential } = authentication.options
+  if (!(credential instanceof LoginTokenCredential)) throw new Error('Expected a login token recorder.')
+  return credential
 }
 
+function credentialOf(connection: Connection) {
+  return loginTokenOf(connection).source
+}
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+const settle = () => new Promise(resolve => setImmediate(resolve))
 const opened: Connection[] = []
 const closed: Connection[] = []
+const resets: Connection[] = []
+let tokenLifetimeMs = 60 * minute
 
 beforeEach(() => {
   constructed.length = 0
   opened.length = 0
   closed.length = 0
-  jest.spyOn(ClientSecretCredential.prototype, 'getToken')
-    .mockRejectedValue(new Error('Tests must not request Entra tokens.'))
+  resets.length = 0
+  tokenLifetimeMs = 60 * minute
+  // Stand-in tokens keep tests offline; the login flow still requests them through the shared credential.
+  jest.spyOn(ClientSecretCredential.prototype, 'getToken').mockImplementation(async (): Promise<AccessToken> => ({
+    token: 'test-only-token', expiresOnTimestamp: Date.now() + tokenLifetimeMs,
+  }))
   jest.spyOn(Connection.prototype, 'connect').mockImplementation(function (this: Connection, callback) {
     opened.push(this)
-    callback?.()
+    loginTokenOf(this).getToken(sqlScope).then(() => callback?.(), (error: Error) => callback?.(error))
+  })
+  jest.spyOn(Connection.prototype, 'reset').mockImplementation(function (this: Connection, callback) {
+    resets.push(this)
+    callback(undefined)
   })
   jest.spyOn(Connection.prototype, 'close').mockImplementation(function (this: Connection) {
     closed.push(this)
   })
 })
-afterEach(() => { jest.restoreAllMocks() })
+afterEach(() => {
+  closeSqlPool()
+  jest.useRealTimers()
+  jest.restoreAllMocks()
+})
 
 describe('application identity SQL authentication', () => {
   it('uses only server-side application credentials, without a delegated SQL token', async () => {
@@ -90,21 +120,26 @@ describe('application identity SQL authentication', () => {
       connectTimeout: 60_000,
       requestTimeout: 60_000,
     })
-    expect(closed).toEqual([opened[0]])
-    expect(ClientSecretCredential.prototype.getToken).not.toHaveBeenCalled()
+    expect(jest.mocked(ClientSecretCredential.prototype.getToken).mock.calls.map(([scope]) => scope)).toEqual([sqlScope])
+    expect(jest.mocked(ClientSecretCredential.prototype.getToken).mock.contexts).toEqual([constructed[0].credential])
+    expect(closed).toEqual([])
   })
 
-  it('reuses one credential across fresh sequential and concurrent connections', async () => {
+  it('reuses one credential across servers and one pooled connection per server and database', async () => {
     const values = freshSecrets()
     await withSql(context(values), async () => 1)
-    await withSql(context({ ...values, TRIVIA_SQL_SERVER: 'other.database.fabric.microsoft.com', TRIVIA_SQL_DATABASE: 'other' }), async () => 2)
-    await Promise.all([withSql(context(values), async () => 3), withSql(context(values), async () => 4)])
-    expect(constructed).toHaveLength(1)
+    await withSql(context(values), async () => 2)
+    expect(opened).toHaveLength(1)
+    expect(resets).toEqual([opened[0]])
+    await withSql(context({ ...values, TRIVIA_SQL_SERVER: 'other.database.fabric.microsoft.com', TRIVIA_SQL_DATABASE: 'other' }), async () => 3)
+    expect(opened).toHaveLength(2)
+    expect(closed).toEqual([opened[0]])
+    await Promise.all([withSql(context(values), async () => 4), withSql(context(values), async () => 5)])
     expect(opened).toHaveLength(4)
     expect(new Set(opened).size).toBe(4)
+    expect(closed).toEqual([opened[0], opened[1]])
+    expect(constructed).toHaveLength(1)
     for (const connection of opened) expect(credentialOf(connection)).toBe(constructed[0].credential)
-    expect(closed).toHaveLength(4)
-    expect(new Set(closed)).toEqual(new Set(opened))
   })
 
   it.each([
@@ -121,6 +156,7 @@ describe('application identity SQL authentication', () => {
       .toEqual([credentialArguments(values), credentialArguments(changed), credentialArguments(values)])
     expect(new Set(constructed.map(({ credential }) => credential)).size).toBe(3)
     opened.forEach((connection, index) => expect(credentialOf(connection)).toBe(constructed[index].credential))
+    expect(closed).toEqual([opened[0], opened[1]])
   })
 
   it('passes the full unmodified secret to the credential', async () => {
@@ -160,8 +196,10 @@ describe('application identity SQL authentication', () => {
     await withSql(context(current), async () => 3)
     expect(constructed.map(({ args }) => args))
       .toEqual([credentialArguments(previous), credentialArguments(current)])
-    expect(credentialOf(opened[2])).toBe(constructed[1].credential)
-    expect(closed).toHaveLength(3)
+    expect(opened).toHaveLength(2)
+    expect(credentialOf(opened[1])).toBe(constructed[1].credential)
+    expect(resets).toEqual([opened[1]])
+    expect(closed).toEqual([opened[0]])
   })
 
   it.each(Object.keys(secrets))('rejects missing %s before connecting, without an SSO fallback', async key => {
@@ -190,6 +228,7 @@ describe('application identity SQL authentication', () => {
       expect(ctx.getToken).not.toHaveBeenCalled()
       expect(action).not.toHaveBeenCalled()
       expect(opened).toHaveLength(1)
+      expect(closed).toEqual([opened[0]])
       expect(constructed).toHaveLength(1)
       await expect(withSql(context(values), async () => 3)).resolves.toBe(3)
       expect(constructed.map(({ args }) => args)).toEqual([credentialArguments(values), credentialArguments(values)])
@@ -225,13 +264,126 @@ describe('application identity SQL authentication', () => {
     },
   )
 
-  it('closes the connection, preserves an operation failure, and keeps the credential', async () => {
+  it('preserves an operation failure and keeps the idle connection and credential', async () => {
     const values = freshSecrets()
     const failure = new Error('Operation failed.')
     await expect(withSql(context(values), async () => { throw failure })).rejects.toBe(failure)
-    expect(closed).toEqual([opened[0]])
     await expect(withSql(context(values), async () => 1)).resolves.toBe(1)
     expect(constructed).toHaveLength(1)
-    expect(closed).toHaveLength(2)
+    expect(opened).toHaveLength(1)
+    expect(resets).toEqual([opened[0]])
+    expect(closed).toEqual([])
+  })
+})
+
+describe('per-worker SQL connection pool', () => {
+  it('bounds open connections and hands a released connection to a queued invocation', async () => {
+    const values = freshSecrets()
+    const gate = deferred()
+    const invocations = SQL_POOL_LIMITS.maxConnections + 1
+    const running = Array.from({ length: invocations }, (_, index) =>
+      withSql(context(values), async () => { await gate.promise; return index }))
+    await settle()
+    expect(opened).toHaveLength(SQL_POOL_LIMITS.maxConnections)
+    gate.resolve()
+    await expect(Promise.all(running)).resolves.toEqual([...Array(invocations).keys()])
+    expect(opened).toHaveLength(SQL_POOL_LIMITS.maxConnections)
+    expect(resets).toHaveLength(1)
+    expect(closed).toEqual([])
+  })
+
+  it('times out a queued invocation when every connection stays busy', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] })
+    const values = freshSecrets()
+    const gate = deferred()
+    const running = Array.from({ length: SQL_POOL_LIMITS.maxConnections }, () =>
+      withSql(context(values), () => gate.promise))
+    const action = jest.fn(async () => 1)
+    const queued = withSql(context(values), action)
+    await settle()
+    jest.advanceTimersByTime(SQL_POOL_LIMITS.acquireTimeoutMs)
+    await expect(queued).rejects.toThrow('Timed out waiting for a SQL connection.')
+    expect(action).not.toHaveBeenCalled()
+    gate.resolve()
+    await Promise.all(running)
+  })
+
+  it('closes a connection that stays idle for the idle timeout', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] })
+    const values = freshSecrets()
+    await withSql(context(values), async () => 1)
+    jest.advanceTimersByTime(SQL_POOL_LIMITS.idleTimeoutMs - 1)
+    expect(closed).toEqual([])
+    jest.advanceTimersByTime(1)
+    expect(closed).toEqual([opened[0]])
+    await withSql(context(values), async () => 2)
+    expect(opened).toHaveLength(2)
+  })
+
+  it.each([
+    ['its login token nears expiry', 20 * minute, 16 * minute],
+    ['it reaches the maximum connection age', 2 * 60 * minute, 32 * minute],
+  ])('stops reusing a busy connection once %s', async (_reason, lifetime, retiredBy) => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] })
+    tokenLifetimeMs = lifetime
+    const values = freshSecrets()
+    await withSql(context(values), async () => 1)
+    for (let elapsed = 4 * minute; elapsed < retiredBy; elapsed += 4 * minute) {
+      jest.advanceTimersByTime(4 * minute)
+      await withSql(context(values), async () => 1)
+    }
+    expect(opened).toHaveLength(1)
+    jest.advanceTimersByTime(4 * minute)
+    await withSql(context(values), async () => 1)
+    expect(opened).toHaveLength(2)
+    expect(closed).toEqual([opened[0]])
+  })
+
+  it('closes a connection immediately when its login token is already inside the expiry margin', async () => {
+    tokenLifetimeMs = SQL_POOL_LIMITS.tokenExpiryMarginMs
+    await withSql(context(freshSecrets()), async () => 1)
+    expect(closed).toEqual([opened[0]])
+  })
+
+  it('replaces a pooled connection that fails its reset check', async () => {
+    const values = freshSecrets()
+    await withSql(context(values), async () => 1)
+    jest.mocked(Connection.prototype.reset).mockImplementationOnce(function (this: Connection, callback) {
+      resets.push(this)
+      callback(new Error('Connection lost.'))
+    })
+    await expect(withSql(context(values), async () => 2)).resolves.toBe(2)
+    expect(resets).toEqual([opened[0]])
+    expect(opened).toHaveLength(2)
+    expect(closed).toEqual([opened[0]])
+  })
+
+  it.each([
+    ['ends', (connection: Connection) => connection.emit('end')],
+    ['reports an error', (connection: Connection) => connection.emit('error', new Error('Socket closed.'))],
+  ])('closes an idle connection that %s between invocations', async (_event, fail) => {
+    const values = freshSecrets()
+    await withSql(context(values), async () => 1)
+    fail(opened[0])
+    expect(closed).toEqual([opened[0]])
+    await withSql(context(values), async () => 2)
+    expect(opened).toHaveLength(2)
+    expect(resets).toEqual([])
+  })
+
+  it('does not return a connection whose rollback failed', async () => {
+    jest.spyOn(Connection.prototype, 'execSqlBatch').mockImplementation(request => request.callback(null, 0))
+    jest.spyOn(Connection.prototype, 'beginTransaction').mockImplementation(callback => callback(null))
+    jest.spyOn(Connection.prototype, 'rollbackTransaction')
+      .mockImplementation(callback => callback(new Error('Connection lost.')))
+    const log = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    const values = freshSecrets()
+    const failure = new Error('Original failure.')
+    await expect(withSql(context(values), sql => sql.transaction(async () => { throw failure }))).rejects.toBe(failure)
+    expect(log).toHaveBeenCalledWith('SQL rollback failed; closing the connection to discard uncommitted work.')
+    expect(closed).toContain(opened[0])
+    await withSql(context(values), async () => 2)
+    expect(opened).toHaveLength(2)
+    expect(resets).toEqual([])
   })
 })
