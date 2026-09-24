@@ -1,233 +1,112 @@
 # Microsoft Fabric Trivia Challenge
 
-A quiz web application where players assess their Microsoft Fabric knowledge through an engaging, time-pressured quiz game.
+A sample quiz application for supervised event kiosks. Players answer Microsoft Fabric questions against the clock, earn time through streaks, and review incorrect answers.
 
-![A screenshot of the main game screen](docs/src/assets/trivia-game.png)
+The application uses React and TypeScript, Rayfin Functions, a Fabric SQL database, and Fabric Real-Time Intelligence for telemetry.
 
-## 🎯 Overview
+> [!IMPORTANT]
+>
+> This version requires the Rayfin preview in Microsoft Fabric. Run the complete game in a Fabric deployment. Local builds and tests are supported; local gameplay and offline operation are not. This is a replacement for the earlier .NET and Cosmos DB implementation, not an in-place data migration.
 
-- **Purpose**: Help events attendees assess their knowledge about Microsoft Fabric, and demonstrate Fabric capabilities.
-- **Format**: Interactive quiz game with time pressure and streak bonuses
-- **Tech Stack**: React + TypeScript + .NET 10 + Microsoft Fabric (Cosmos DB, Realtime Intelligence, Power BI)
+## Overview
 
-![Architecture diagram of the solution](docs/src/assets/architecture.png)
+The sample demonstrates a React application backed by Rayfin Functions, transactional Fabric SQL storage, and Eventstream telemetry delivered to Eventhouse. Function invocation relies on Fabric gateway authentication, not the browser's sign-in controls.
 
-## 🚀 Getting Started
+- Play a timed quiz using touch, mouse, or the keyboard.
+- Create question pools and import questions from UTF-8 CSV files.
+- Sign in each kiosk operator with their own Fabric account. Attendees do not need Fabric accounts.
+- Create pseudonymous adventurers using generated names, private return codes, and three-rune spells.
+- Save game results in SQL and analyze events in Eventhouse.
+
+Question banks, players, and saved games live in the application's **SQL database**. Analytics events live in the **KQL database** under Eventhouse. The repository does not include a Power BI report or an anonymous report-embedding service.
+
+## Getting started
 
 ### Prerequisites
 
-- [Docker](https://www.docker.com/products/docker-desktop)
-- [Visual Studio Code](https://code.visualstudio.com/)
-- [Dev Containers Extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- [Node.js](https://nodejs.org/) 24 and npm.
+- [Git](https://git-scm.com/).
+- A Fabric workspace with supported capacity and access to the Rayfin preview, Functions, SQL database, Eventstream, and Eventhouse.
+- Permission to deploy the app and analytics resources, plus administrator help to authorize a dedicated SQL application identity.
 
-### Option 1: Docker Local Testing (Quickest)
+Command examples use Bash. On Windows, use Git Bash or WSL.
 
-Run the complete application with Cosmos DB Emulator:
+### Set up the application
 
-```bash
-# Clone and start
-git clone https://github.com/microsoft/trivia-challenge.git
-cd trivia-challenge
-./docker.sh local:up
+1. Clone the repository and install both sets of dependencies using [Deploy the application](docs/deployment.md#1-install-dependencies-and-the-cli).
+2. Follow the rest of the deployment guide to deploy the app, connect analytics, and configure backend credentials. Deployment creates or updates billable cloud resources.
+3. Open `https://<your-app-host>/operator`. Select **Sign in operator with Fabric**, then **Load questions and create pools**.
+4. Follow [Prepare and import questions](docs/questions.md). Use [examples/questions.csv](examples/questions.csv) or select **Use sample questions** to start with four questions. Preview and confirm the import; questions are not loaded automatically.
+5. Follow [Run a kiosk](docs/operations.md) to assign a station ID and complete a game with each operator account before admitting attendees.
 
-# Access at http://localhost:8080
-```
+### Player flow
 
-This builds and runs both frontend and backend with a local Cosmos DB Emulator.
+New adventurers choose a country or region and three different runes in order. Registration reveals a generated name and a private four-character code. The code is shown only on this confirmation screen. Players keep their code and spell, then select **Begin trivia**.
 
-### Option 2: Dev Container (Recommended for Development)
+Returning adventurers enter their masked code and the same rune sequence. After a game, wait for the result to finish saving before selecting **Play Again**.
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/microsoft/trivia-challenge.git
-   cd trivia-challenge
-   ```
+The app does not request names or contact details from attendees. Generated identities, selected countries, and linked gameplay remain pseudonymous data. Review access, retention, and public-reporting requirements before collecting or publishing them.
 
-2. Open in VS Code:
-   ```bash
-   code .
-   ```
+## Development
 
-3. When prompted, click "Reopen in Container" (or press `F1` → "Dev Containers: Reopen in Container")
-
-4. Wait for the container to build and start (~5-10 minutes first time)
-
-5. Once ready, start the services:
-   ```bash
-   # Terminal 1: Start the .NET API
-   cd backend/TriviaChallenge.Api
-   dotnet run
-
-   # Terminal 2: Start the frontend
-   npm run dev
-   ```
-
-6. Access the application:
-   - **Frontend**: http://localhost:5173
-   - **API**: http://localhost:5000
-   - **API Docs**: http://localhost:5000/swagger
-   - **Cosmos DB Explorer**: https://localhost:8081/_explorer/index.html
-
-### What's Included in Dev Container
-
-- ✅ Node.js 22 with TypeScript
-- ✅ .NET 10 SDK
-- ✅ Azure Cosmos DB Emulator (with auto-configuration)
-- ✅ All required VS Code extensions
-
-For a detailed walkthrough, see the [Development Setup Guide](docs/development-setup.md).
-
-## 📁 Project Structure
-
-```
-trivia-challenge/
-├── .devcontainer/          # Dev container configuration
-│   ├── devcontainer.json   # VS Code dev container config
-│   ├── docker-compose.yml  # Docker Compose setup
-│   ├── Dockerfile          # Custom dev container image
-│   └── post-create.sh      # Setup script
-├── backend/                # .NET 10 API
-│   └── TriviaChallenge.Api/    # Main API project
-├── docs/                   # Documentation
-├── frontend/               # React + TypeScript frontend
-└── infra/                  # Azure Bicep infrastructure templates
-```
-
-## 🏗️ Architecture
-
-- **Frontend**: React + TypeScript + Tailwind CSS + Vite
-- **Backend**: .NET 10 Minimal API with versioning
-- **Database**: Azure Cosmos DB (local emulator for development)
-- **Analytics**: Microsoft Fabric for real-time telemetry
-- **Hosting**: Azure Web App for containers
-
-## 🎮 Game Features
-
-- **Time Pressure**: Base 1 minute timer with streak bonuses (up to 2 minutes total)
-- **Heart System**: Start with five hearts, lose half a heart on each incorrect answer, and end the run instantly at zero hearts
-- **Difficulty Levels**: Easy/Medium/Hard with forgiving progression
-- **Leaderboards**: Daily and cumulative rankings
-- **Telemetry**: Comprehensive tracking of all interactions
-- **Input Methods**: Touch, mouse, and keyboard support (Z/C/B/M keys)
-
-## 🔧 Development
-
-### Development Modes
-
-#### Docker Development Mode
-```bash
-# Start backend + Cosmos DB in Docker
-./docker.sh dev:up
-
-# Start frontend dev server (in another terminal)
-./docker.sh dev:frontend
-```
-
-#### Manual Development Mode
-```bash
-# Terminal 1: Backend
-cd backend/TriviaChallenge.Api
-dotnet run
-
-# Terminal 2: Frontend
-cd frontend
-npm run dev
-```
-
-### API Endpoints
-
-The API uses versioned endpoints with the pattern: `api/v{version}/{resource}`
-
-- **Users**: `POST /api/v1.0/users/register`, `GET /api/v1.0/users/{email}`
-- **Sessions**: `POST /api/v1.0/sessions`, `POST /api/v1.0/sessions/{id}/complete`
-- **Questions**: `POST /api/v1.0/questions/upload`, `GET /api/v1.0/questions/draw/{seed}`
-
-See API documentation at http://localhost:5000/swagger when running.
-
-### Database Schema
-
-- **Users**: Email (PK), Name, Phone
-- **Questions**: Question text + Answer
-- **QuestionDraws**: Randomized question sets with seed-based reproducibility
-- **GameSessions**: Links users to draws with scores
-
-### Running Tests
+After installing dependencies, run these checks from the repository root:
 
 ```bash
-# Backend tests
-cd backend/TriviaChallenge.Api.Tests
-dotnet test
-
-# Frontend tests
+npm run build
+npm run build:functions
+npm run schema:check
 npm test
+npm run lint
 ```
 
-## 📦 Docker & Deployment
+`npm run dev:frontend` serves the UI at `http://127.0.0.1:5173`, without working Fabric sign-in or gameplay. `npm run dev` starts a Fabric-backed Rayfin workflow that can change cloud resources. Use a dedicated test workspace, not an event workspace.
 
-### Docker Development & Testing
+See [Contributing](CONTRIBUTING.md) for targeted tests, editable country and name lists, and documentation requirements.
 
-Quick commands:
-```bash
-./docker.sh help           # Show all commands
-./docker.sh local:up       # Start local test environment (with Cosmos Emulator)
-./docker.sh prod:up        # Start production environment (needs .env with Azure Cosmos DB)
-./docker.sh dev:up         # Start development environment
-./docker.sh clean          # Clean up Docker resources
-```
+## Project structure
 
-See the [Docker reference](docs/src/content/docs/reference/DOCKER.md) for comprehensive documentation including multi-stage production builds, Docker Compose setups, and troubleshooting tips.
+| Path                | Contents                                            |
+| ------------------- | --------------------------------------------------- |
+| `src/`              | React pages, game state, timer, and client services |
+| `public/`           | Logos, station avatars, and pool icons              |
+| `rayfin/data/`      | SQL entity definitions                              |
+| `rayfin/functions/` | Backend Functions and their tests                   |
+| `scripts/`          | Deployment configuration and analytics provisioning |
+| `infra/`            | Telemetry table definitions and KQL queries         |
+| `examples/`         | Sample question CSV                                 |
+| `docs/`             | Deployment, operator, and developer documentation   |
 
-### Azure Deployment
+## Documentation
 
-Deploy the application to Azure Container Registry and Azure Web Apps:
+| Guide | Use it to |
+| --- | --- |
+| [Deployment](docs/deployment.md) | Prerequisites, first deployment, updates, and backend configuration |
+| [Excel and CSV questions](docs/questions.md) | Spreadsheet layout, answer keys, pools, metadata, and import errors |
+| [Kiosk operation](docs/operations.md) | Operator sign-in, station IDs, player handoff, and troubleshooting |
+| [Architecture](docs/architecture.md) | Components, game rules, data storage, and request handling |
+| [Telemetry](docs/telemetry-events.md) | Event reference, delivery monitoring, privacy, and report queries |
+| [Contributing](CONTRIBUTING.md) | Make, validate, and submit code or documentation changes |
 
-```bash
-# Deploy with full control
-./deploy-image.sh <acr-name> \
-  --resource-group <resource-group> \
-  --app-name <app-service-name> \
-  --image-tag latest
-```
+## Limitations
 
-The deployment script will:
-1. Build the Docker image from the Dockerfile
-2. Push the image to your Azure Container Registry
-3. Update and restart the Azure Web App to pull the latest image
-
-See the [Infrastructure Deployment Guide](docs/deploying-infrastructure.md) and [Code Deployment Guide](docs/deploying-code.md) for details.
-
-## 📚 Documentation
-
-| Guide | Description |
-|-------|-------------|
-| [Development Setup](docs/development-setup.md) | Set up your dev environment with Docker and Dev Containers |
-| [Deploying Infrastructure](docs/deploying-infrastructure.md) | Deploy Azure resources with Bicep templates |
-| [Deploying Code](docs/deploying-code.md) | Build, push, and deploy the application |
-| [Telemetry Events Reference](docs/telemetry-events.md) | Complete list of analytics events and properties |
-| [Dev Container Setup](.devcontainer/README.md) | Detailed devcontainer documentation |
-| [Infrastructure Reference](infra/README.md) | Bicep template parameters and configuration |
-| [Station ID Tracking](docs/STATION_ID_TRACKING.md) | Station-based telemetry for kiosk deployments |
-| [API Specifications](docs/specs/) | Detailed API spec documents |
-| [Game Logic](docs/src/content/docs/product/game_logic.md) | Game mechanics and timer system |
+- This sample is designed for supervised kiosks, not adversarial or prize-bearing competitions. The browser receives answer keys and controls the game timer.
+- A code and rune spell identify a returning adventurer. They do not prove a person's identity or enforce one entry per person.
+- All authorized operator sessions can load questions. The app has no separate question-administrator role.
+- Active games and pending writes are held in browser memory. Refreshing or closing a tab cannot resume them.
+- Telemetry is best effort. A saved SQL result does not guarantee delivery to a report.
 
 ## Contributing
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit [Contributor License Agreements](https://cla.opensource.microsoft.com).
+This project welcomes contributions and suggestions. Most contributions require you to agree to a Contributor License Agreement declaring that you have the right to grant us the rights to use your contribution. For details, visit [Contributor License Agreements](https://cla.opensource.microsoft.com).
 
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
+Read [Contributing](CONTRIBUTING.md) before opening a pull request.
 
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+When you submit a pull request, a CLA bot determines whether you need to provide a CLA. Follow its instructions. You only need to do this once across repositories using our CLA.
+
+This project has adopted the [Microsoft Open Source Code of Conduct](CODE_OF_CONDUCT.md). For more information, see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com).
+
+See [Support](SUPPORT.md) for help, [Security](SECURITY.md) for vulnerability reporting, and [LICENSE](LICENSE) for the MIT license.
 
 ## Trademarks
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions must not cause confusion or imply Microsoft sponsorship. Third-party trademarks and logos are subject to those third parties' policies.

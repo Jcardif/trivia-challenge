@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "ESNext.Decorators"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": ".",
+    "outDir": ".temp/compiled",
+    "strict": true,
+    "skipLibCheck": true,
+    "composite": true,
+    "declaration": true
+  },
+  "include": ["data/**/*.ts"]
+}

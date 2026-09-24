@@ -1,241 +1,160 @@
-# Telemetry Events Reference
+# Telemetry events
 
-This document lists every analytics event that the Microsoft Fabric Trivia Challenge emits, along with their properties and context fields. Use this reference when building dashboards, running queries in Microsoft Fabric, or extending the telemetry system.
+The application records page interactions and game events for analysis in Fabric. The browser queues events, the `trackTelemetryBatch` Function forwards them to Eventstream, and Eventhouse stores them in `TriviaTelemetry`.
 
-## How telemetry works
+Follow [Deployment](deployment.md) to provision the analytics resources and configure the publisher credential.
 
-```
-Frontend (browser)
-  └─ analyticsService.ts
-       ├─ Queues events in batches
-       └─ POST /api/v{version}/telemetry/track  ──►  Backend (.NET API)
-                                                        ├─ Validates & timestamps
-                                                        └─ Forwards to Azure Event Hubs
-                                                             └─ Microsoft Fabric (Real-Time Intelligence)
-```
+## Event contract
 
-Every event is enriched with a **context** object (see [Common context fields](#common-context-fields)) before it is sent.
+Every event carries a stable UUID `eventId`, `event`, `type`, client ISO `timestamp`, optional attendee `userId`, `properties`, and `context`. The publisher maps `event` to `eventName`, adds `eventType: "track"` and `ingestedAtUtc`, and preserves the dynamic properties and context. `ingestedAtUtc` is the publisher timestamp, not a receipt from Eventhouse. `type` is `pageview` for page views, `user` for registration and pool selection, `game` for game events, and `interaction` for clicks, touches, and keyboard events.
 
----
+| Event | When emitted | Event-specific properties |
+| --- | --- | --- |
+| `pageview.home` | Registration page displayed | `path` |
+| `pageview.select-pool` | Pool selection page loaded | `path` |
+| `pool.selected` | Player chooses a pool | `poolId`, `poolName` |
+| `user.register` | A new or returning adventurer enters the challenge | `userId`, generated `name`, selected `country`, `entryMode` |
+| `game.start` | Session and draw loaded, countdown starting | `sessionId`, `questionCount`, `heartsRemaining` |
+| `game.answerquestion` | Answer persistence attempt resolves | `sessionId`, `questionId`, `category`, `answerIndex`, `isCorrect`, `responseTime`, `remainingTimeSeconds`, `questionNumber`, `heartsRemaining`, `totalScore` on success, `apiSuccess`, optional `error` |
+| `game.streakcompleted` | Streak progress reaches five | `sessionId`, `streakLevel`, `currentStreak`, `streakProgressAfterReset`, `heartsRemaining` |
+| `game.ended` | Saved game completion | `sessionId`, `questionsAnswered`, `correctAnswers`, `streaksCompleted`, `timeRemaining`, `heartsRemaining`, `gameOverReason`, `apiSuccess` |
+| `page.click` | Mouse click | `x`, `y`, `button`, `element` |
+| `page.touch` | Touch start | `x`, `y`, `element` |
+| `page.keyboardkeydown` | Eligible, non-repeating key press | `key`, `code`, modifier booleans, `element` |
 
-## Events
+`responseTime` is in milliseconds and `remainingTimeSeconds` is in seconds. Streak levels run from 1 to 5. Click and touch listeners share a 16 ms throttle. There is no mouse-movement listener.
 
-### `pageview.home`
+### Context and attribution
 
-Fired when the sign-in page is first displayed.
+Common context includes `url` and `path`. URL queries and fragments are stripped. Page-specific context may add `page`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `path` | string | URL path, e.g. `"/"` |
+After player entry, every gameplay event includes the saved country. This is a manually selected name, not an inferred location. When available, context also includes `sessionId`, `poolId`, `poolName`, and the `stationId` cookie. See [Assign a station ID](operations.md#assign-a-station-id).
 
-**Event type:** `pageview`
+The event snapshots these fields and its top-level attendee `userId` before queueing. A later attendee cannot change the queued event's attribution. Resetting the player clears country attribution only for subsequent events.
 
----
+### Privacy boundaries
 
-### `user.register`
+All click, touch, and keyboard capture skips regions marked `data-telemetry-private`, including player entry, rune selection, and private-code displays. Keyboard events also skip inputs, selects, textareas, editable content, and textbox roles. Non-control text keys are generalized.
 
-Fired when a player completes the registration form.
+The browser does not collect language, user agent, viewport, or screen dimensions. Both the browser queue and backend publisher reject known contact, credential, detailed-location, and browser-fingerprint fields, including nested fields.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `userId` | string | Unique user identifier |
-| `name` | string | Player display name |
-| `hasPhoneNumber` | boolean | Whether a phone number was provided |
+Country fields accept the approved list and seven explicit legacy spellings. Both boundaries normalize the legacy names to ASCII before queueing or publishing. They reject arbitrary location strings and other accent variants. Historical Eventhouse data remains unchanged; reports must apply the [country-name mapping](operations.md#ascii-country-names) when combining it with new events. Other text is not transliterated.
 
-**Event type:** `user`
+The app-generated `user.register` event omits player codes, selected runes, and rune verifiers. Its name must match the curated generated-name format. The creation request UUID becomes `userId`; it is not a secret.
 
----
+The publisher rejects prohibited field names, but cannot detect a credential or personal information embedded in otherwise permitted text. These checks reduce accidental collection; they do not guarantee that arbitrary authenticated submissions contain no private information.
 
-### `game.start`
+Generated aliases, player IDs, countries, stations, timestamps, and gameplay remain pseudonymous data. Restrict access and set retention before collecting them. Older events are not automatically sanitized or deleted. Review platform and network logs separately, and do not publish raw participant payloads in shared diagnostics.
 
-Fired when a new game session begins (after the 3-second countdown).
+## Delivery behavior
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `sessionId` | string | Unique game session identifier |
-| `questionCount` | number | Total questions available in the draw |
-| `heartsRemaining` | number | Starting heart count |
+| Limit                     | Value                             |
+| ------------------------- | --------------------------------- |
+| Browser queue             | 500 events or 2 MiB               |
+| One event                 | 16 KiB UTF-8 JSON                 |
+| Browser batch             | 50 events or 96 KiB               |
+| Backend request           | 50 events or 128 KiB              |
+| Event Hubs producer batch | 64 KiB                            |
+| Default flush interval    | 5 seconds                         |
+| Retry lifetime            | 10 minutes or 8 attempts          |
+| Backoff                   | Exponential, capped at 30 seconds |
 
-**Event type:** `game`
+The backend validates known event/type pairs, UUIDs, timestamps, and bounded JSON before publishing. It uses UTF-8 JSON buffers and `eventId` as the Event Hubs message ID. It acknowledges IDs only after the publisher send succeeds. Transport failures return sanitized errors.
 
----
+Delivery can repeat an event after an uncertain acknowledgment. Deduplicate by `eventId`. The `TriviaEvents()` KQL function in [infra/telemetry.kql](../infra/telemetry.kql) deduplicates the full table; the queries below filter the raw table first to limit the rows being aggregated. Application retries can also create different event IDs for one saved answer or completion. Deduplicate those by their session/question or session ID before reporting.
 
-### `game.answerquestion`
+Delivery is best effort, not guaranteed. Queued events survive attendee reset in the same tab, but not tab closure or refresh. Events can also expire or exceed queue limits.
 
-Fired every time the player submits an answer.
+The operator page at `/operator` reports queued, acknowledged, and dropped counts with the last failure for the current browser tab. Finish and save the current game before navigating there. An acknowledgment confirms forwarding, not Eventhouse ingestion. An empty queue does not by itself prove that events arrived.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `sessionId` | string | Game session identifier |
-| `questionId` | string | Question identifier |
-| `category` | string | Question category |
-| `answerIndex` | number | Index of the selected answer (0-based) |
-| `isCorrect` | boolean | Whether the answer was correct |
-| `responseTime` | number | Milliseconds between question display and answer |
-| `remainingTimeSeconds` | number | Seconds remaining on the game timer |
-| `questionNumber` | number | Ordinal position of the question in the session |
-| `heartsRemaining` | number | Hearts remaining after this answer |
-| `totalScore` | number | Cumulative score after this answer |
-| `apiSuccess` | boolean | Whether the backend accepted the submission |
-| `error` | string *(optional)* | Error message if the API call failed |
+## Confirm delivery
 
-**Event type:** `game`
+1. Complete a game on the deployed application and wait for its result to save.
+2. In the Fabric workspace, open the `triviachallenge-events` Eventstream. Confirm that its `TriviaEventhouseData` destination is `Running`.
+3. Open the `TriviaChallengeTelemetry` KQL database and run the following query.
 
----
-
-### `game.streakcompleted`
-
-Fired when a player completes a streak (5 consecutive correct answers).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sessionId` | string | Game session identifier |
-| `streakLevel` | number | Which streak was completed (1–4) |
-| `currentStreak` | number | Current streak counter value |
-| `streakProgressAfterReset` | number | Streak progress after the counter resets |
-| `heartsRemaining` | number | Hearts remaining |
-
-**Event type:** `game`
-
----
-
-### `game.ended`
-
-Fired when the game ends (time runs out, hearts depleted, or all questions answered).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sessionId` | string | Game session identifier |
-| `questionsAnswered` | number | Total questions answered |
-| `correctAnswers` | number | Number of correct answers |
-| `streaksCompleted` | number | Number of completed streaks |
-| `timeRemaining` | number | Seconds remaining when game ended |
-| `heartsRemaining` | number | Hearts remaining when game ended |
-| `gameOverReason` | string *(optional)* | Reason the game ended (e.g. `"time"`, `"hearts"`) |
-| `apiSuccess` | boolean | Whether the backend accepted the session completion |
-
-**Event type:** `game`
-
----
-
-### `page.click`
-
-Fired on every mouse click anywhere on the page (throttled to ~60 fps).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `x` | number | Click X coordinate |
-| `y` | number | Click Y coordinate |
-| `button` | number | Mouse button (0 = left, 1 = middle, 2 = right) |
-| `element` | string | Target element tag name |
-
-**Event type:** `interaction`
-
----
-
-### `page.touch`
-
-Fired on every touch start event (throttled to ~60 fps).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `x` | number | Touch X coordinate |
-| `y` | number | Touch Y coordinate |
-| `element` | string | Target element tag name |
-
-**Event type:** `interaction`
-
----
-
-### `page.keyboardkeydown`
-
-Fired on every key press outside of input fields.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `key` | string | Key value (e.g. `"z"`, `"ArrowUp"`) |
-| `code` | string | Key code (e.g. `"KeyZ"`) |
-| `altKey` | boolean | Alt key held |
-| `ctrlKey` | boolean | Ctrl key held |
-| `metaKey` | boolean | Meta/Cmd key held |
-| `shiftKey` | boolean | Shift key held |
-| `element` | string | Target element tag name |
-
-**Event type:** `interaction`
-
----
-
-## Common context fields
-
-Every event includes the following context object, automatically populated by the analytics service:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `url` | string | Full page URL |
-| `path` | string | URL pathname |
-| `language` | string | Browser language (e.g. `"en-US"`) |
-| `userAgent` | string | Browser user-agent string |
-| `viewport` | string | Viewport dimensions (e.g. `"1920x1080"`) |
-| `screen` | string | Screen dimensions (e.g. `"1920x1080"`) |
-| `sessionId` | string *(optional)* | Game session ID, if a session is active |
-| `stationId` | string *(optional)* | Physical station identifier, read from a `stationId` cookie (see [Station ID Tracking](STATION_ID_TRACKING.md)) |
-
----
-
-## Backend processing
-
-The backend `POST /api/v{version}/telemetry/track` endpoint:
-
-1. Validates required fields (`type`, `event`).
-2. Validates that the client timestamp is not more than 5 minutes in the future.
-3. Assigns a unique `eventId` and records `processedAtUtc`.
-4. Forwards the event to Azure Event Hubs (when configured) for ingestion into Microsoft Fabric.
-5. Returns a response with `eventId`, `processedAtUtc`, `forwarded` (boolean), and an optional `message`.
-
-### Request schema
-
-```json
-{
-  "type": "game",
-  "event": "game.start",
-  "userId": "user-123",
-  "timestamp": "2025-11-12T07:46:20.924Z",
-  "properties": { "sessionId": "abc", "questionCount": 20, "heartsRemaining": 5 },
-  "context": { "url": "...", "stationId": "booth-01" }
-}
-```
-
-### Response schema
-
-```json
-{
-  "eventId": "evt-uuid",
-  "processedAtUtc": "2025-11-12T07:46:21.000Z",
-  "forwarded": true,
-  "message": "Event processed successfully"
-}
-```
-
-## Example Fabric / KQL queries
+Replace `<your-deployed-https-origin>` with the app origin from the active deployment registry:
 
 ```kql
-// Top 10 players by score
-TelemetryEvents
-| where event == "game.ended"
-| extend score = toint(properties.correctAnswers) * 10
-| top 10 by score desc
-
-// Average response time per category
-TelemetryEvents
-| where event == "game.answerquestion"
-| extend category = tostring(properties.category),
-         responseTime = todouble(properties.responseTime)
-| summarize avg(responseTime) by category
-
-// Sessions per station
-TelemetryEvents
-| where event == "game.start"
-| extend station = tostring(context.stationId)
-| summarize sessions = count() by station
-| order by sessions desc
+let appOrigin = "<your-deployed-https-origin>";
+TriviaTelemetry
+| where timestamp > ago(2h)
+| where tostring(context.url) startswith strcat(appOrigin, "/")
+| where eventName in ("game.start", "game.answerquestion", "game.ended")
+| summarize arg_max(ingestedAtUtc, *) by eventId
+| summarize eventNames=make_set(eventName), latestEvent=max(timestamp)
+    by sessionId=tostring(context.sessionId), stationId=tostring(context.stationId)
+| order by latestEvent desc
 ```
+
+The completed session should have start, answer, and end events, with the expected station assignment. Publisher acknowledgments in **Kiosk operator setup** do not replace this ingestion check.
+
+### Command-line verification
+
+The read-only verifier provides additional event counts and game totals. Set the deployment's workspace and hosting origin, then use the session identifier returned by the query above:
+
+```bash
+export WORKSPACE_ID="<your-workspace-id>"
+export APP_ORIGIN="<your-deployed-https-origin>"
+export SESSION_ID="<completed-game-session-id>"
+export STATION_ID="<your-station-label>"
+node scripts/provision-telemetry.mjs \
+  --workspace-id "$WORKSPACE_ID" --verify \
+  --app-origin "$APP_ORIGIN" \
+  --session-id "$SESSION_ID" --station-id "$STATION_ID"
+```
+
+Use an empty `STATION_ID` if the browser has no station assignment. The command queries the last two hours and checks for all three lifecycle event names when a session is specified. It does not generate test events.
+
+If the CLI reports `KUSTO_AUTH_REQUIRED`, use the authenticated Fabric query editor instead. For the detailed counts, open [infra/telemetry-verify.kql](../infra/telemetry-verify.kql) and replace its `declare query_parameters` line with `let` bindings for `appOrigin`, `sessionId`, and `stationId`. Browser tokens do not need to be copied.
+
+### Destination configuration
+
+The provisioning script configures the following destination properties:
+
+| Property       | Value                                            |
+| -------------- | ------------------------------------------------ |
+| Destination    | `TriviaEventhouseData`                           |
+| Ingestion mode | `ProcessedIngestion`                             |
+| Target item    | The `TriviaChallengeTelemetry` KQL database item |
+| Table          | `TriviaTelemetry`                                |
+| Input format   | JSON encoded as UTF-8                            |
+
+The destination's `itemId` identifies the KQL database, not the parent Eventhouse. Provisioning reuses owned resources without overwriting their definitions. If an existing destination differs, review its configuration in Fabric before making changes.
+
+## Example report queries
+
+Run these queries against `TriviaChallengeTelemetry`, replacing the app origin. Each query filters raw events to the reporting window before deduplicating deliveries and saved operations. Do not use the unbounded `TriviaEvents()` function for frequent report refreshes without measuring its query cost.
+
+### Response time by category
+
+```kql
+let appOrigin = "<your-deployed-https-origin>";
+TriviaTelemetry
+| where timestamp > ago(1d) and eventName == "game.answerquestion"
+| where tostring(context.url) startswith strcat(appOrigin, "/")
+| where tobool(properties.apiSuccess) == true
+| summarize arg_max(ingestedAtUtc, *) by eventId
+| extend sessionId = tostring(properties.sessionId),
+    questionId = tostring(properties.questionId)
+| where isnotempty(sessionId) and isnotempty(questionId)
+| summarize arg_max(timestamp, *) by sessionId, questionId
+| summarize averageResponseMs=avg(todouble(properties.responseTime))
+    by category=tostring(properties.category)
+```
+
+### Started sessions by station
+
+```kql
+let appOrigin = "<your-deployed-https-origin>";
+TriviaTelemetry
+| where timestamp > ago(1d) and eventName == "game.start"
+| where tostring(context.url) startswith strcat(appOrigin, "/")
+| summarize arg_max(ingestedAtUtc, *) by eventId
+| extend sessionId = tostring(properties.sessionId)
+| where isnotempty(sessionId)
+| summarize arg_max(timestamp, *) by sessionId
+| summarize sessions=count() by station=tostring(context.stationId)
+```
+
+These filters scope a report; they do not enforce access control. Events originate in an authenticated browser and are not a tamper-proof audit log. Use saved SQL records when authoritative game totals are required.
