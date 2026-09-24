@@ -1,5 +1,7 @@
 # Microsoft Fabric Trivia Challenge
 
+<a href="https://github.com/features/copilot"><img src="docs/images/built-with-github-copilot.png" alt="Built with GitHub Copilot" width="240"></a>
+
 A sample quiz application for supervised event kiosks. Players answer Microsoft Fabric questions against the clock, earn time through streaks, and review incorrect answers.
 
 The application uses React and TypeScript, Rayfin Functions, a Fabric SQL database, and Fabric Real-Time Intelligence for telemetry.
