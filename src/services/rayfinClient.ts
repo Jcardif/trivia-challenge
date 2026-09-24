@@ -1,6 +1,7 @@
 import { RayfinClient, resolveRayfinConfig } from '@microsoft/rayfin-client'
 import { ensureSignedInWithFabric, initiateFabricLogin, type FabricAuthOptions } from '@microsoft/rayfin-auth-provider-fabric'
 import type { AppFunctionsSchema, FunctionResult, OperationMap } from '../types/api'
+import { gameConfig } from '../config/gameConfig'
 import { OperationError } from './operationError'
 import { operationResponseValidators, validValidationErrors } from './operationResponses'
 
@@ -89,8 +90,12 @@ async function initializeConnection(): Promise<OperatorConnection> {
       importQuestions: input => client.functions.importQuestions.invoke(input),
       startSession: input => client.functions.startSession.invoke(input),
       getSessionQuestions: input => client.functions.getSessionQuestions.invoke(input),
-      submitAnswer: input => client.functions.submitAnswer.invoke(input),
-      endSession: input => client.functions.endSession.invoke(input),
+      submitAnswer: input => client.functions.submitAnswer.invoke(input, {
+        timeoutMs: gameConfig.persistence.gameWriteTimeoutMs,
+      }),
+      endSession: input => client.functions.endSession.invoke(input, {
+        timeoutMs: gameConfig.persistence.gameWriteTimeoutMs,
+      }),
       trackTelemetryBatch: input => client.functions.trackTelemetryBatch.invoke(input),
     },
     fabricOptions: {

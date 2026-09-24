@@ -24,13 +24,27 @@ Every event carries a stable UUID `eventId`, `event`, `type`, client ISO `timest
 
 `responseTime` is in milliseconds and `remainingTimeSeconds` is in seconds. Streak levels run from 1 to 5. Click and touch listeners share a 16 ms throttle. There is no mouse-movement listener.
 
-Common context includes `url` and `path`. After identifying a player, it also includes the saved `country`, including on every gameplay event. This is a manually selected approved country/region name, not an inferred location. Browser language, user agent, viewport, and screen dimensions are no longer collected. When available, context also includes `sessionId`, `poolId`, `poolName`, and the `stationId` cookie. The event snapshots these fields and its top-level attendee `userId` before queueing, so a later attendee cannot change attribution. Resetting the player clears country attribution for subsequent events without changing queued events. URL queries and fragments are stripped. Page-specific context may add `page`. See [Assign a station ID](operations.md#assign-a-station-id) for station assignment.
+### Context and attribution
+
+Common context includes `url` and `path`. URL queries and fragments are stripped. Page-specific context may add `page`.
+
+After player entry, every gameplay event includes the saved country. This is a manually selected name, not an inferred location. When available, context also includes `sessionId`, `poolId`, `poolName`, and the `stationId` cookie. See [Assign a station ID](operations.md#assign-a-station-id).
+
+The event snapshots these fields and its top-level attendee `userId` before queueing. A later attendee cannot change the queued event's attribution. Resetting the player clears country attribution only for subsequent events.
+
+### Privacy boundaries
 
 All click, touch, and keyboard capture skips regions marked `data-telemetry-private`, including player entry, rune selection, and private-code displays. Keyboard events also skip inputs, selects, textareas, editable content, and textbox roles. Non-control text keys are generalized.
 
-The browser queue and backend publisher reject known contact, credential, detailed-location, and browser-fingerprint fields, including nested fields. Country fields accept names in `rayfin/functions/src/country-names.txt` and the seven explicit previous spellings in `countries.ts`. Both boundaries normalize those previous spellings to ASCII before queueing or publishing; arbitrary location strings and other accent variants are rejected. See the [country-name mapping](operations.md#ascii-country-names). This does not rewrite events already stored in Eventhouse, so reports combining historical data must apply the same mapping. Other text fields are not transliterated. `user.register` accepts only names matching the curated generated-name format. It never includes player codes, selected rune IDs, or rune verifiers. The creation request UUID becomes the player ID and is included as `userId`; it is not a secret. This is a guard against accidental collection, not a general detector for personal information hidden in arbitrary strings.
+The browser does not collect language, user agent, viewport, or screen dimensions. Both the browser queue and backend publisher reject known contact, credential, detailed-location, and browser-fingerprint fields, including nested fields.
 
-Generated aliases, player IDs, country, station attribution, timestamps, and gameplay are still pseudonymous data. Do not claim that deleting contact fields makes the dataset legally anonymous. Restrict access and decide retention before collecting it. Existing events from older versions are not automatically sanitized or deleted, and platform/network logging needs a separate review. Do not publish raw participant payloads in logs, issues, or shared diagnostics.
+Country fields accept the approved list and seven explicit legacy spellings. Both boundaries normalize the legacy names to ASCII before queueing or publishing. They reject arbitrary location strings and other accent variants. Historical Eventhouse data remains unchanged; reports must apply the [country-name mapping](operations.md#ascii-country-names) when combining it with new events. Other text is not transliterated.
+
+The app-generated `user.register` event omits player codes, selected runes, and rune verifiers. Its name must match the curated generated-name format. The creation request UUID becomes `userId`; it is not a secret.
+
+The publisher rejects prohibited field names, but cannot detect a credential or personal information embedded in otherwise permitted text. These checks reduce accidental collection; they do not guarantee that arbitrary authenticated submissions contain no private information.
+
+Generated aliases, player IDs, countries, stations, timestamps, and gameplay remain pseudonymous data. Restrict access and set retention before collecting them. Older events are not automatically sanitized or deleted. Review platform and network logs separately, and do not publish raw participant payloads in shared diagnostics.
 
 ## Delivery behavior
 
@@ -41,14 +55,17 @@ Generated aliases, player IDs, country, station attribution, timestamps, and gam
 | Browser batch             | 50 events or 96 KiB               |
 | Backend request           | 50 events or 128 KiB              |
 | Event Hubs producer batch | 64 KiB                            |
+| Default flush interval    | 5 seconds                         |
 | Retry lifetime            | 10 minutes or 8 attempts          |
 | Backoff                   | Exponential, capped at 30 seconds |
 
 The backend validates known event/type pairs, UUIDs, timestamps, and bounded JSON before publishing. It uses UTF-8 JSON buffers and `eventId` as the Event Hubs message ID. It acknowledges IDs only after the publisher send succeeds. Transport failures return sanitized errors.
 
-Delivery is at least once. Deduplicate reports by `eventId`; the `TriviaEvents()` KQL function in [infra/telemetry.kql](../infra/telemetry.kql) does this. Queued events survive attendee reset in the same tab, but not tab closure or refresh. Offline delivery and page shutdown remain best effort.
+Delivery can repeat an event after an uncertain acknowledgment. Deduplicate by `eventId`. The `TriviaEvents()` KQL function in [infra/telemetry.kql](../infra/telemetry.kql) deduplicates the full table; the queries below filter the raw table first to limit the rows being aggregated. Application retries can also create different event IDs for one saved answer or completion. Deduplicate those by their session/question or session ID before reporting.
 
-The operator page at `/operator` reports queued, acknowledged, and dropped counts with the last failure. Finish and save the current game before navigating there. An acknowledgment confirms forwarding, not Eventhouse ingestion. An empty queue does not by itself prove that events arrived.
+Delivery is best effort, not guaranteed. Queued events survive attendee reset in the same tab, but not tab closure or refresh. Events can also expire or exceed queue limits.
+
+The operator page at `/operator` reports queued, acknowledged, and dropped counts with the last failure for the current browser tab. Finish and save the current game before navigating there. An acknowledgment confirms forwarding, not Eventhouse ingestion. An empty queue does not by itself prove that events arrived.
 
 ## Confirm delivery
 
@@ -60,16 +77,17 @@ Replace `<your-deployed-https-origin>` with the app origin from the active deplo
 
 ```kql
 let appOrigin = "<your-deployed-https-origin>";
-TriviaEvents()
+TriviaTelemetry
 | where timestamp > ago(2h)
 | where tostring(context.url) startswith strcat(appOrigin, "/")
 | where eventName in ("game.start", "game.answerquestion", "game.ended")
+| summarize arg_max(ingestedAtUtc, *) by eventId
 | summarize eventNames=make_set(eventName), latestEvent=max(timestamp)
     by sessionId=tostring(context.sessionId), stationId=tostring(context.stationId)
 | order by latestEvent desc
 ```
 
-The completed session should have start, answer, and end events, with the expected station assignment. Publisher acknowledgments in **Operator setup** do not replace this ingestion check.
+The completed session should have start, answer, and end events, with the expected station assignment. Publisher acknowledgments in **Kiosk operator setup** do not replace this ingestion check.
 
 ### Command-line verification
 
@@ -106,23 +124,37 @@ The destination's `itemId` identifies the KQL database, not the parent Eventhous
 
 ## Example report queries
 
-Run these queries against `TriviaChallengeTelemetry`. `TriviaEvents()` deduplicates deliveries by event ID.
+Run these queries against `TriviaChallengeTelemetry`, replacing the app origin. Each query filters raw events to the reporting window before deduplicating deliveries and saved operations. Do not use the unbounded `TriviaEvents()` function for frequent report refreshes without measuring its query cost.
+
+### Response time by category
 
 ```kql
-// Highest completed scores in the last day
-TriviaEvents()
-| where timestamp > ago(1d) and eventName == "game.ended"
-| extend score = toint(properties.correctAnswers) * 10
-| top 10 by score desc;
-
-// Response time by category
-TriviaEvents()
+let appOrigin = "<your-deployed-https-origin>";
+TriviaTelemetry
 | where timestamp > ago(1d) and eventName == "game.answerquestion"
+| where tostring(context.url) startswith strcat(appOrigin, "/")
+| where tobool(properties.apiSuccess) == true
+| summarize arg_max(ingestedAtUtc, *) by eventId
+| extend sessionId = tostring(properties.sessionId),
+    questionId = tostring(properties.questionId)
+| where isnotempty(sessionId) and isnotempty(questionId)
+| summarize arg_max(timestamp, *) by sessionId, questionId
 | summarize averageResponseMs=avg(todouble(properties.responseTime))
-    by category=tostring(properties.category);
-
-// Started sessions by station
-TriviaEvents()
-| where timestamp > ago(1d) and eventName == "game.start"
-| summarize sessions=count() by station=tostring(context.stationId);
+    by category=tostring(properties.category)
 ```
+
+### Started sessions by station
+
+```kql
+let appOrigin = "<your-deployed-https-origin>";
+TriviaTelemetry
+| where timestamp > ago(1d) and eventName == "game.start"
+| where tostring(context.url) startswith strcat(appOrigin, "/")
+| summarize arg_max(ingestedAtUtc, *) by eventId
+| extend sessionId = tostring(properties.sessionId)
+| where isnotempty(sessionId)
+| summarize arg_max(timestamp, *) by sessionId
+| summarize sessions=count() by station=tostring(context.stationId)
+```
+
+These filters scope a report; they do not enforce access control. Events originate in an authenticated browser and are not a tamper-proof audit log. Use saved SQL records when authoritative game totals are required.

@@ -1,10 +1,16 @@
 # Deploy the application
 
-This guide deploys the frontend, Rayfin Functions, SQL database, and telemetry resources to your Fabric workspace. Run all commands from the repository root in Bash.
+Deploy the frontend and Functions, configure the application's SQL identity, and connect telemetry to Eventhouse. At the end, each authorized kiosk operator should be able to sign in, complete a game, and save its result.
+
+Run commands from the repository root in Bash. Replace values in angle brackets with values from your environment.
+
+> [!IMPORTANT]
+>
+> Deployment and provisioning change cloud resources and can incur charges. Use a dedicated test workspace for first-time setup. Do not deploy to an active kiosk or apply database changes while games or saves are in progress.
 
 ## Prerequisites
 
-Use Node.js 24 and npm. Open a terminal in the repository root, where `package.json` and `rayfin/` are located. Confirm the following with your Fabric administrator:
+Install [Node.js 24 and npm](https://nodejs.org/) and [Git](https://git-scm.com/). On Windows, use Git Bash or WSL. Confirm the following with your Fabric administrator:
 
 | Requirement | What is needed |
 | --- | --- |
@@ -19,7 +25,14 @@ See Microsoft's [Fabric capacity documentation](https://learn.microsoft.com/fabr
 
 ## 1. Install dependencies and the CLI
 
-Install both sets of locked dependencies from the public npm registry, including development dependencies:
+Clone the repository:
+
+```bash
+git clone https://github.com/microsoft/trivia-challenge.git
+cd trivia-challenge
+```
+
+Install both sets of locked dependencies, including development dependencies:
 
 ```bash
 npm ci --include=dev &&
@@ -27,20 +40,16 @@ npm ci --include=dev &&
   npx rayfin --version
 ```
 
-The CLI package is **`@microsoft/rayfin-cli`**. It supplies the executable named **`rayfin`** and is installed as a development dependency. `--include=dev` ensures that deployment tools are installed even when npm otherwise omits development dependencies.
+The frontend and Functions have separate lockfiles. The `@microsoft/rayfin-cli` development dependency supplies the `rayfin` executable. `--include=dev` includes the deployment tools.
 
-Continue only after both installations succeed and the version command prints the installed CLI version. If `npx rayfin` requests an unpublished package named `rayfin`, the local executable is unavailable. Complete this installation step in the repository root instead of changing the package name to `@microsoft/rayfin`.
-
-The packages are available at `https://registry.npmjs.org/`. If installation cannot reach the registry, check your npm configuration and network access before continuing.
+Continue only after both installations succeed and the version command prints the installed CLI version. If installation fails, see [Troubleshooting](#troubleshooting).
 
 ## 2. Select the deployment target
-
-Replace each value in angle brackets with a value from your environment.
 
 | Variable | Where to find it |
 | --- | --- |
 | `TENANT_ID` | Your Microsoft Entra tenant's **Tenant ID**, available from the tenant overview or your administrator. |
-| `WORKSPACE_URI` | The full Fabric portal URL for the target workspace. Use the portal host for the environment you intend to deploy to, such as `https://app.fabric.microsoft.com/groups/<workspace-id>/...` for production or `https://daily.fabric.microsoft.com/groups/<workspace-id>/...` for Daily. |
+| `WORKSPACE_URI` | The full Fabric portal URL for the target workspace, for example `https://app.fabric.microsoft.com/groups/<workspace-id>/list`. Use the correct Fabric portal host for your environment. |
 
 ```bash
 export TENANT_ID="<your-tenant-id>"
@@ -66,13 +75,13 @@ npx rayfin up status
 
 The `functions` flag enables the Functions deployment workflow in the pinned CLI. The workspace URI lets Rayfin derive both the workspace ID and Fabric API environment. The deployment builds the frontend and Functions, applies the SQL schema, and records its configuration in `rayfin/.deployments.json`.
 
-Use a `*.fabric.microsoft.com` workspace URL, not a `*.powerbi.com` URL. For example, a workspace opened through `daily.powerbi.com` can be targeted with `https://daily.fabric.microsoft.com/groups/<workspace-id>/list`. Tenant selection and environment selection are separate.
+Use a `*.fabric.microsoft.com` workspace URL, not a `*.powerbi.com` URL. The tenant ID selects the directory; the portal host selects the Fabric environment. Do not substitute an API endpoint for the workspace URL.
 
 Record the following values for later steps:
 
 | Variable | Where to find it |
 | --- | --- |
-| `APP_ORIGIN` | `hostingUrl` in that same entry. Use the HTTPS origin without a path, query string, or trailing slash. |
+| `APP_ORIGIN` | `hostingUrl` in the active entry of `rayfin/.deployments.json`. Use the HTTPS origin without a path, query string, or trailing slash. |
 | `SQL_DATABASE_ID` | Open the deployed application's SQL child item in Fabric and copy that item's identifier from its URL. Use the application-owned SQL database, not another database in the workspace. |
 
 ```bash
@@ -80,16 +89,37 @@ export APP_ORIGIN="<deployed-https-origin>"
 export SQL_DATABASE_ID="<application-sql-database-id>"
 ```
 
-The app is not ready for players yet. Its backend secrets and analytics resources are configured next. The scripts read workspace ID, tenant ID, application ID, Fabric API URL, and hosting URL from the active deployment registry entry. Optional `--workspace-id` and `--app-id` arguments are safety checks only; they must match the active deployment.
+The app is not ready for players yet. Complete analytics and backend configuration below.
+
+The helper scripts read the workspace, tenant, app, and endpoint information from the active deployment registry entry. Optional `--workspace-id` and `--app-id` arguments are safety checks; they must match that entry.
 
 The helpers derive the Fabric REST environment from the entry's `fabricDeepLink`. The registry's `fabricApiUrl` normally identifies the app's regional workload endpoint, not the Fabric REST root. Do not replace it with `https://api.fabric.microsoft.com/v1`. For legacy entries without a portal link, the helpers accept a first-party REST endpoint or use production when the API URL is also absent.
 
 ## 4. Provision analytics
 
-Preview the selected environment, workspace, and resource names, then create the resources:
+Choose one path. Reuse existing analytics items when they already belong to this deployment; do not create a duplicate pipeline for each operator.
+
+### Reuse existing analytics
+
+If Git sync or an earlier deployment restored the analytics items, skip provisioning:
+
+```bash
+export EVENTSTREAM_ID="<existing-eventstream-id>"
+```
+
+Open the Eventstream in Fabric. Confirm that it contains exactly one `CustomEndpoint` source named `TriviaApp` and that its destination reaches the intended Eventhouse table and is running. Step 5 reads the source's publisher credential without replacing items or changing topology.
+
+### Create analytics
+
+Preview the selected environment, workspace, and resource names:
 
 ```bash
 node scripts/provision-telemetry.mjs
+```
+
+Review the output, then apply:
+
+```bash
 node scripts/provision-telemetry.mjs --apply
 ```
 
@@ -112,20 +142,46 @@ In Fabric, open the Eventstream and confirm that its `TriviaEventhouseData` dest
 
 The script reuses resources that it owns. It refuses name collisions with unrelated items and does not overwrite existing definitions. Use separate workspaces for independent deployments; these analytics names are fixed.
 
-If Git sync has already restored the analytics items, skip provisioning. Set `EVENTSTREAM_ID` to the existing Eventstream's ID. It must contain exactly one `CustomEndpoint` source named `TriviaApp`, connected to the intended running Eventhouse destination. Step 5 reads its publisher credentials without creating items or changing its topology.
-
 ## 5. Configure the backend
 
 ### Register and authorize the SQL identity
 
 Operator sign-in and SQL authentication are separate. Operators keep their own Fabric accounts. The Functions use one Entra application identity to connect to the shared SQL database.
 
-1. In the [Entra admin center](https://entra.microsoft.com/), switch to the deployment tenant. Open **Entra ID > App registrations > New registration**. Create a dedicated single-tenant app, such as `trivia-sql-backend`, without a redirect URI. Record its **Directory (tenant) ID** and **Application (client) ID**.
-2. Open that registration's **Certificates & secrets > Client secrets > New client secret**. Choose an expiry approved by your organization. Copy the **Value**, not the Secret ID, and record its expiry in the team's credential store. This implementation uses a client secret; Microsoft recommends certificate or federated credentials for long-lived production use. If your policy prohibits client secrets, stop rather than placing a different credential type in this setting.
-3. Ask the Fabric administrator to allow the service principal through **Service principals can call Fabric public APIs**, also named **Service principals can use Fabric APIs** in some environments. Include it in the allowed security group rather than enabling access for the entire organization.
-4. On the application's SQL database child item, use **Share** or **Manage permissions** to give the application **Read** item permission. Leave additional permissions, including **Read all data**, off. Do not use the KQL database or SQL analytics endpoint.
-5. Connect to that SQL database as an authorized database administrator using SSMS or the MSSQL extension for VS Code. The Rayfin child item's portal editor is read-only. Review [grant-sql-identity.sql](../scripts/grant-sql-identity.sql), replace `<application-client-id>` with the client ID from step 1, and run it. This creates an external database user and grants the required reads, inserts, and updates on the nine application tables. It does not grant `db_owner`, schema changes, deletes, or access to Rayfin's authentication tables.
-6. Confirm each kiosk operator has **Run and interact** access to the Fabric app. They do not need this application credential. Item permission changes can take up to two hours to take effect.
+| Identity | Access required |
+| --- | --- |
+| Deployment account | Create and update app resources and configure backend secrets |
+| Backend Entra application | Connect to the app's SQL database and use its nine application tables |
+| Kiosk operator | Run and interact with the Fabric app using their own account |
+| Attendee | No Fabric account; uses the operator-authenticated kiosk |
+
+#### Create the application credential
+
+1. In the [Entra admin center](https://entra.microsoft.com/), switch to the deployment tenant.
+2. Open **Entra ID** > **App registrations** > **New registration**. Create a dedicated single-tenant app, such as `trivia-sql-backend`, without a redirect URI.
+3. Record its **Directory (tenant) ID** and **Application (client) ID**.
+4. Open **Certificates & secrets** > **Client secrets** > **New client secret**. Choose an approved expiry, then select **Add**.
+5. Copy the **Value**, not the Secret ID, to your approved credential store. Record its expiry and arrange rotation before that date.
+
+This implementation uses a client secret. Microsoft recommends certificate or federated credentials for production applications. If your organization prohibits client secrets, stop; this sample does not implement those alternative credential flows.
+
+#### Grant database and operator permissions
+
+1. Ask the Fabric administrator to allow this service principal through **Service principals can call Fabric public APIs**, also called **Service principals can use Fabric APIs** in the [SQL authentication guidance](https://learn.microsoft.com/fabric/database/sql/authentication). Scope access to an approved security group.
+2. Open the SQL database child item under the trivia Fabric app. Use **Share** or **Manage permissions** to grant the Entra application **Read** item permission, without additional **Read all data** permissions.
+3. Connect to that database as an authorized database administrator using SSMS or the MSSQL extension for VS Code. Use its SQL hostname and database name, not the item ID. The Rayfin child item's portal editor is read-only.
+4. Review [grant-sql-identity.sql](../scripts/grant-sql-identity.sql). Replace `<application-client-id>` with the client ID you recorded, then run the file against that database.
+5. Grant each kiosk operator **Run and interact** access to the Fabric app. Do not distribute the application's client secret to operators.
+
+The SQL script creates a database user and grants table-level reads, inserts, and updates. It does not grant `db_owner`, schema changes, deletes, or access to Rayfin authentication tables. [Fabric item permission changes can take up to two hours](https://learn.microsoft.com/fabric/database/sql/share-sql-manage-permission#limitations) to take effect.
+
+Use the correct database for each task:
+
+| Item                     | Used for                                                              |
+| ------------------------ | --------------------------------------------------------------------- |
+| Application SQL database | Questions, players, sessions, answers, and the SQL grants above       |
+| SQL analytics endpoint   | Analytical access; not the application's transactional write endpoint |
+| Eventhouse KQL database  | Telemetry queries and report data; not player or question storage     |
 
 Fabric item Read permission and SQL table grants are separate requirements. See [SQL authentication](https://learn.microsoft.com/fabric/database/sql/authentication), [database sharing](https://learn.microsoft.com/fabric/database/sql/share-sql-manage-permission), and [Entra application credentials](https://learn.microsoft.com/entra/identity-platform/how-to-add-credentials).
 
@@ -170,6 +226,8 @@ The output lists configured setting names without exposing their values. The SQL
 
 Rotate the client secret before it expires. Capture a replacement, update the protected local file, rerun this upload, and verify a saved game before revoking the old secret. Secret rotation does not require a code change. Keep the local credential file only as long as your approved credential-management process requires.
 
+Warm Function workers reuse the backend credential and its in-memory token cache. Each invocation reads the settings again and selects a new credential if the tenant, client ID, or secret changes. Revoking a secret does not necessarily invalidate issued tokens or open SQL connections. Do not rely on secret revocation alone for immediate access removal; follow your organization's incident-response procedure.
+
 ## 6. Load questions and run a game
 
 1. Open `/operator` on the hosting URL from step 3.
@@ -179,7 +237,9 @@ Rotate the client secret before it expires. Capture a replacement, update the pr
 5. Return to registration, complete a game, and wait for its saved result.
 6. Follow [Confirm telemetry delivery](telemetry-events.md#confirm-delivery) to check that the game events reached Eventhouse.
 
-Repeat sign-in and a saved game with a non-builder operator in a private browser window. Then check each kiosk operator's own account and station. Confirm their results reach the existing shared scoreboard. Deployment health and a successful builder login do not prove that other operators can sign in.
+Repeat sign-in and a saved game with a non-builder operator in a private browser window. Then check each kiosk operator's own account and station. If you have connected a separate scoreboard, confirm that the result reaches it. Deployment health and a successful builder login do not prove that other operators can sign in.
+
+In the test deployment, verify that the Fabric gateway rejects Function requests without authentication and from accounts without app access. Also verify that direct Data API requests return no application records and permit no writes. The browser's sign-in screen and local schema checks do not prove deployed authorization enforcement. See [Operator access](architecture.md#operator-access).
 
 The deployment is ready for a kiosk when operator sign-in, registration, question loading, saved results, and telemetry delivery work in that environment. Configure the station using [Run a kiosk](operations.md).
 
@@ -231,4 +291,4 @@ Review any destructive schema change before using `--force`. Routine deployment 
 | Telemetry destination is not running | Inspect the Eventstream destination in Fabric and follow the [telemetry guide](telemetry-events.md#confirm-delivery). |
 | Localhost reports unsupported Fabric sign-in | Use the deployed hosting URL. Local gameplay is not supported. |
 
-Deployment creates a new question and player database. It does not import data from an existing system or configure the external leaderboard report.
+An initial deployment provisions the application's SQL database. Later deployments update that app. Neither path imports legacy data or configures the external leaderboard report.

@@ -38,29 +38,61 @@ Question draws include the correct answer index so the browser can provide feedb
 
 ## Authentication and data access
 
-The Fabric operator authenticates the browser. Attendee entry creates or retrieves a pseudonymous player record; it does not create a Fabric identity. New players must manually select a country or region from the approved picker. The application does not accept attendee names, email addresses, phone numbers, cities, or states, and does not infer location.
+### Operator access
 
-A new adventurer chooses three distinct item runes in order from the versioned nine-item catalog in `rayfin/functions/src/playerIdentity.ts`. The server generates a name from the editable `rayfin/functions/src/player-name-words.txt` word banks. The first use has no number; collisions append `2`, `3`, and later sequence numbers inline. A single aggregate over the indexed name/prefix finds the next number inside the existing entry transaction, without repeated name-collision probes. The private code is separate and contains one Crockford letter followed by three decimal digits. There are 22,000 possible codes and 504 ordered rune selections. Codes are normalized without discarding leading zeros. Five-character codes and runes outside the nine-item catalog are rejected.
+The Fabric operator signs in through the browser, but Function authorization relies on the Fabric gateway. The Function handlers do not independently check the operator, and the installed Functions SDK registers anonymous host routes for the gateway to protect. Do not expose the Functions host as a standalone anonymous service. Verify rejection of unauthenticated and unauthorized invocations in the deployed environment.
 
-The shared word module is generated before browser and Functions builds, keeping generation and validation aligned. Keep assigned words available for existing identities unless a migration is planned. Changing the word file does not rename stored players.
+Attendee entry creates or retrieves a pseudonymous player record; it does not create a Fabric identity.
 
-The country list has the same build-time model. `rayfin/functions/src/country-names.txt` generates the shared `countryNames.generated.ts` and contains only printable ASCII names. `countries.ts` validates exact approved names with a precomputed set and maps seven previously supported Unicode spellings to their ASCII names. New registrations store the ASCII spelling, and returned players use it even when their stored row has the old spelling. Creation retries compare the normalized names, so an equivalent spelling does not create a conflict. Reads do not rewrite existing rows. Free-text locations, arbitrary accent variants, and missing countries are rejected. Keep the explicit aliases while old records or queued events can still reference them. No runtime list fetch or location lookup is needed.
+The same operator session authorizes gameplay and question loading. There is no separate question-administrator role. `/operator` separates staff controls from attendee screens but does not add an authorization boundary.
 
-Returning entry verifies the code and ordered spell on the server as soon as the third rune is selected. Its password input keeps the actual value for validation and submission, while the visible cells show one `*` per entered character. There is no reveal control. A successful response continues into the challenge; a mismatch clears the rune selection and retains the masked code. The client submits only on input events, not render effects, so errors do not create an automatic retry loop. Network and operator-session failures preserve the spell for explicit retry. Only a salted scrypt verifier is stored for the spell, not the selected rune IDs. The `registerPlayer` request is a strict `new`/`returning` union; contact fields are rejected. New entry uses a stable UUID request ID as the player ID, so a retry with the same country and spell returns the same generated identity. A different spell or country never overwrites the record.
+If a request rejects the operator session, a recovery dialog opens a fresh Fabric broker login. The underlying attendee form, game, and pending writes stay mounted. In-app navigation cannot leave a starting or active game, or its unsaved results, for management tools.
 
-`PlayerEntryState` serializes code/name allocation and enforces a shared limit of 60 player-entry attempts per minute without recording IP addresses or device identifiers. Each player also has a five-failure limit within a 15-minute window. Failed-attempt updates commit even when verification fails. The same limits cover returning entry and creation replays. The SQL unique constraints are additional safeguards.
+### Attendee identity
 
-This is a lightweight verification mechanism for the existing operator-authenticated, supervised kiosk. It is not a separate Fabric authorization boundary, strong account authentication, proof of a real-world identity, or one-person-one-entry enforcement. Forgotten credentials produce a new identity, not a contact-based recovery flow. Changing catalog IDs or their meaning can invalidate existing spells; keep version 1 stable.
+New adventurers select a country and three distinct runes in order from the versioned nine-item catalog in `rayfin/functions/src/playerIdentity.ts`. The app does not request names or contact details or infer location.
 
-The same operator session is used for gameplay and question loading. There is no separate question-administrator role.
+The server generates a name from `rayfin/functions/src/player-name-words.txt`. The first use has no suffix; collisions append `2`, `3`, or the next number. A single SQL aggregate over the name/prefix finds that number inside the entry transaction.
 
-Operator management is available directly at `/operator`, without a button on attendee screens. Attendee routes retain a minimal sign-in recovery dialog that keeps the underlying form, game, and pending writes mounted. A rejected session opens a fresh Fabric broker login rather than reusing the rejected session or requiring sign-out. In-app navigation cannot leave a starting or active game, or its unsaved results, to open management tools.
+The private code contains one Crockford letter followed by three decimal digits. There are 22,000 possible codes and 504 ordered rune selections. Normalization preserves leading zeros. Five-character codes and runes outside the catalog are rejected.
 
-The entry page starts with returning-player entry. Its shared board contains the title, large station avatar, code or searchable country control, and a fixed three-by-three icon-only rune keypad. The keypad becomes available after a valid code or country choice. Changing a code clears the spell. Selecting the third rune starts registration or verification once, from the input handler. New-player codes replace the keypad only after both registration and the completion animation finish. This confirmation is the only screen that displays the private code; gameplay and results do not show it. The selected runes remain visible and read-only, and **Begin trivia** is the single new-player confirmation. A failed request offers explicit retry; a pending creation retains its request ID, country, and spell. Accessible item names remain on the buttons, keyboard arrows move between rune keys, and reduced-motion preferences skip the animation wait. Entry styles are scoped to that page rather than changing document scrolling or other routes. Other pages retain the fixed station avatar.
+The server stores a salted scrypt verifier for the spell, not the selected rune IDs. `registerPlayer` accepts a strict `new`/`returning` request union and rejects contact fields.
 
-Application entities deny direct browser reads and writes through the Data API. Authenticated Functions access SQL using an Entra application identity and parameterized `tedious` queries. The SQL hostname, database, tenant ID, client ID, and client secret are backend secrets. The driver obtains the application's SQL token; Functions do not declare delegated SQL connections or request an operator SQL token. Missing application credentials fail explicitly, without a fallback to operator SSO.
+New entry uses a stable UUID request ID as the player ID. A retry with the same country and spell returns the same identity. A different country or spell cannot overwrite it.
 
-Fabric operator sign-in remains the application access check. Every authorized operator uses the same backend SQL identity, with permissions limited to the application tables. Operators do not receive its credentials. This supports one shared database and telemetry pipeline across stations; it does not introduce per-operator SQL permissions or a question-administrator role.
+`PlayerEntryState` serializes code/name allocation and enforces a shared limit of 60 entry attempts per minute. Each player also has a five-failure limit within a 15-minute window. Failed-attempt updates commit even when verification fails. Limits cover returning entry and creation replays without recording IP addresses or device identifiers. SQL unique constraints provide additional safeguards.
+
+This is lightweight verification for supervised kiosks, not strong account authentication or one-person-one-entry enforcement. Forgotten credentials produce a new identity. Keep version 1 rune IDs and meanings stable to avoid invalidating saved spells.
+
+### Entry interface
+
+The initial view is returning entry. A valid code or country enables the three-by-three rune keypad. The third rune starts one request from the input handler, not a render effect.
+
+Returning entry uses a password input, displays `*` for each filled cell, and has no reveal control. Changing the code or receiving a mismatch clears the spell. Network and operator-session failures retain it for explicit retry.
+
+New entry waits for both registration and the spell animation, then replaces the keypad with the code. This is the only screen that displays it. Selected runes stay visible and read-only; **Begin trivia** continues. A failed creation retains its request ID, country, and spell for retry.
+
+Rune buttons have accessible names and arrow-key navigation. Reduced-motion preferences skip the animation wait. Entry styles stay scoped to the page; other routes retain their own scrolling and station-avatar behavior.
+
+### Generated names and countries
+
+Builds generate the shared name module from `player-name-words.txt`. Retain words assigned to existing players unless a reviewed migration changes those identities. Editing the file does not rename stored players.
+
+`country-names.txt` generates `countryNames.generated.ts` for the picker and backend validation. It contains printable ASCII names. `countries.ts` accepts exact approved names and maps seven legacy Unicode spellings to their ASCII equivalents.
+
+New registrations store ASCII names. Reads return the canonical spelling without rewriting existing rows, and creation retries compare normalized values. Free-text locations, arbitrary accent variants, and missing countries are rejected. Keep the aliases while old records or queued events can reference them.
+
+Both lists are bundled at build time without a runtime fetch. See [Edit names and countries](../CONTRIBUTING.md#edit-names-and-countries).
+
+### Backend SQL identity
+
+Every application entity declares one authenticated Data API read grant with an always-false row policy and no write grants. The generated policy is `@item.id ne @item.id`; `npm run schema:check` verifies that policy for all nine entities. Functions use parameterized `tedious` queries and an Entra application identity instead of the Data API.
+
+The SQL hostname, database, tenant ID, client ID, and client secret are backend settings. The driver obtains the application's SQL token. Functions do not declare delegated SQL connections or request an operator SQL token. Missing application credentials fail explicitly, without an operator-SSO fallback.
+
+Each invocation reads and validates the settings. A warm worker reuses one `ClientSecretCredential` while its tenant, client ID, and secret remain unchanged, allowing the SDK to reuse valid tokens. A setting change replaces that credential; invalid settings clear the cache. A failed SQL login discards its credential if it is still current. Concurrent invocations on a cold worker can each request a token. SQL connections still open and close per invocation; this is not connection pooling.
+
+Every operator uses the same backend SQL identity and shared database. Operators do not receive the credential or gain per-operator SQL privileges. The setup script grants access only to the application tables; see [Deployment](deployment.md#register-and-authorize-the-sql-identity).
 
 The SQL implementation provides native transactions and locking across several statements. A replacement data-access implementation must retain atomic imports, serialized session writes, replayable results, and the private entity policies. Typed single-entity queries and mutations alone do not satisfy those requirements.
 
@@ -104,6 +136,8 @@ The client sends JSON in a `payload` field. The SDK decodes the `FunctionResult<
 
 Session and import requests retain their identifiers across retries. Accepted answer retries return the original score snapshot, while conflicting submissions fail.
 
+The browser gives `submitAnswer` and `endSession` 30 seconds per attempt. `GameWrites` sends answers serially and makes at most three attempts, with 0.5-second and 1-second backoff, before offering manual retry. Timing out does not cancel server execution. The same request payload is retained for idempotent retry. Other Functions keep the SDK's 250-second default timeout, including imports and session creation.
+
 Per-session SQL locks serialize answers and completion. The frontend waits for pending answers before requesting completion. The backend returns retryable `SESSION_NOT_READY` when the requested completion counters are not yet persisted.
 
 Imports validate all rows before committing. The operator preview shows destination counts, missing display pools, and previous imports of the exact file. Explicitly requested pool creation shares the import transaction. Existing pool metadata is preserved, including pools another operator creates after the preview.
@@ -118,6 +152,6 @@ The complete application requires Fabric. The localhost frontend cannot authenti
 
 Active games and pending writes are held in browser memory. Refreshing the page cannot resume them.
 
-The entire question pool is returned when a game starts, so larger pools increase startup time. The CSV upload limit is not a guarantee of acceptable game-loading performance.
+Each game stores an immutable copy of the entire selected pool in `SessionQuestions` and returns it to the browser. Storage per game and startup work grow with pool size. Test the largest planned pool on event devices; the CSV upload limit is not a guarantee of acceptable game-loading performance.
 
-Telemetry is buffered in memory and delivered at least once. Consumers must deduplicate by event ID. Player entry and private-code regions exclude interaction capture; credentials and contact fields are rejected by both the browser queue and publisher. Generated aliases and gameplay remain pseudonymous records, not proof of legal anonymization. See [Telemetry](telemetry-events.md) for delivery and privacy details.
+Telemetry is buffered in memory. Forwarding retries can create duplicates, but delivery is not guaranteed. Consumers must deduplicate by event ID and saved-operation identifiers. Player entry and private-code regions exclude interaction capture; the browser and publisher reject known credential and contact fields. Generated aliases and gameplay remain pseudonymous records. See [Telemetry](telemetry-events.md).

@@ -49,22 +49,4 @@ describe('Functions deployment discovery', () => {
     })
     expect(names.sort()).toEqual(Object.keys(operations).sort())
   })
-
-  it('declares the SQL audience on data operations but not on telemetry', () => {
-    for (const registration of registrations) {
-      const name = registration.arguments[0]
-      if (!ts.isStringLiteral(name)) throw new Error('Function name must be a literal.')
-      const bindings = registration.arguments[2]
-      if (!bindings || !ts.isArrayLiteralExpression(bindings)) {
-        throw new Error(`${name.text} must declare its connection bindings inline.`)
-      }
-      if (name.text === 'trackTelemetryBatch') {
-        expect(bindings.elements).toHaveLength(0)
-      } else {
-        expect(bindings.elements).toHaveLength(1)
-        expect(bindings.elements[0].getText(source).replace(/\s/g, ''))
-          .toBe('udf.connection({audienceType:AudienceType.Sql})')
-      }
-    }
-  })
 })

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from '@jest/globals'
 import { importInput, parseQuestionCsv } from '../src/csv.js'
 import { DomainError } from '../src/errors.js'
@@ -7,6 +8,23 @@ const header = 'Category,Question,Answer1,Answer2,Answer3,Answer4,CorrectAnswerK
 const row = 'Fabric,What is a lakehouse?,One,Two,Three,Four,0'
 
 describe('CSV question loading', () => {
+  it('validates the published sample with every zero-based answer key', () => {
+    const csv = readFileSync(new URL('../../../examples/questions.csv', import.meta.url), 'utf8')
+    const questions = parseQuestionCsv(csv)
+    expect(questions).toHaveLength(4)
+    expect(questions.map((question) => question.correctAnswerKey).sort()).toEqual([0, 1, 2, 3])
+    expect(questions.every((question) => question.pools.join(',') === 'fabric-basics')).toBe(true)
+  })
+
+  it('validates CSV snippets in the question import guide with the application importer', () => {
+    const guide = readFileSync(new URL('../../../docs/questions.md', import.meta.url), 'utf8')
+    const snippets = [...guide.matchAll(/```csv\r?\n([\s\S]*?)```/g)]
+    expect(snippets.length).toBeGreaterThan(0)
+    for (const [, csv] of snippets) {
+      expect(parseQuestionCsv(csv).length).toBeGreaterThan(0)
+    }
+  })
+
   it('supports optional absent columns and BOM', () => {
     expect(parseQuestionCsv(`\ufeff${header}\n${row}`)).toEqual([{
       category: 'Fabric', questionText: 'What is a lakehouse?',
@@ -14,6 +32,14 @@ describe('CSV question loading', () => {
       metadataRaw: undefined, pools: ['default'],
     }])
   })
+
+  it.each(['\u00a0', '\u3000', '\ufeff'])(
+    'trims Unicode whitespace %j before quoted fields and skips whitespace-only lines',
+    (whitespace) => {
+      const csv = `${header}\n${whitespace}\n${whitespace}"Fabric",What is a lakehouse?,One,Two,Three,Four,0`
+      expect(parseQuestionCsv(csv)).toEqual(parseQuestionCsv(`${header}\n${row}`))
+    },
+  )
 
   it('trims quoted commas/newlines, keeps metadata raw, and normalizes pool memberships', () => {
     const questions = parseQuestionCsv(`${header},Metadata,Pools\r\n` +

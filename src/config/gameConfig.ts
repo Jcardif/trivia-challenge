@@ -10,6 +10,10 @@ const normalizedLockdownMessage =
 export const gameConfig = {
   ...GAME_RULE_DEFAULTS,
 
+  persistence: {
+    gameWriteTimeoutMs: 30_000,
+  },
+
   /**
    * Telemetry Settings
    */

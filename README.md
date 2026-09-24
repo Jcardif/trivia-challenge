@@ -1,19 +1,24 @@
 # Microsoft Fabric Trivia Challenge
 
-A quiz web application that helps event attendees and learners assess their Microsoft Fabric knowledge. Players answer multiple-choice questions against the clock, earn time through streaks, and review incorrect answers.
+A sample quiz application for supervised event kiosks. Players answer Microsoft Fabric questions against the clock, earn time through streaks, and review incorrect answers.
 
 The application uses React and TypeScript, Rayfin Functions, a Fabric SQL database, and Fabric Real-Time Intelligence for telemetry.
 
-> This application requires access to the Rayfin preview in Microsoft Fabric. The complete game runs in Fabric. Local development supports building and testing the code, but not local gameplay or offline operation.
+> [!IMPORTANT]
+>
+> This version requires the Rayfin preview in Microsoft Fabric. Run the complete game in a Fabric deployment. Local builds and tests are supported; local gameplay and offline operation are not. This is a replacement for the earlier .NET and Cosmos DB implementation, not an in-place data migration.
 
-## Features
+## Overview
 
-- Timed questions with streak bonuses, hearts, and answer feedback.
-- Question pools loaded from CSV files prepared in Excel or a text editor.
-- Touch, mouse, and keyboard controls.
-- One Fabric operator sign-in per kiosk browser. Attendees register without Fabric accounts.
-- Generated adventurer names, private return codes, and three-item rune spells instead of attendee contact forms.
-- Saved game results and event telemetry for analysis in Fabric.
+The sample demonstrates a React application backed by Rayfin Functions, transactional Fabric SQL storage, and Eventstream telemetry delivered to Eventhouse. Function invocation relies on Fabric gateway authentication, not the browser's sign-in controls.
+
+- Play a timed quiz using touch, mouse, or the keyboard.
+- Create question pools and import questions from UTF-8 CSV files.
+- Sign in each kiosk operator with their own Fabric account. Attendees do not need Fabric accounts.
+- Create pseudonymous adventurers using generated names, private return codes, and three-rune spells.
+- Save game results in SQL and analyze events in Eventhouse.
+
+Question banks, players, and saved games live in the application's **SQL database**. Analytics events live in the **KQL database** under Eventhouse. The repository does not include a Power BI report or an anonymous report-embedding service.
 
 ## Getting started
 
@@ -21,68 +26,42 @@ The application uses React and TypeScript, Rayfin Functions, a Fabric SQL databa
 
 - [Node.js](https://nodejs.org/) 24 and npm.
 - [Git](https://git-scm.com/).
-- A Fabric workspace with capacity, Rayfin enabled, and permission to deploy the application and its analytics resources.
+- A Fabric workspace with supported capacity and access to the Rayfin preview, Functions, SQL database, Eventstream, and Eventhouse.
+- Permission to deploy the app and analytics resources, plus administrator help to authorize a dedicated SQL application identity.
 
 Command examples use Bash. On Windows, use Git Bash or WSL.
 
-### 1. Clone and install
+### Set up the application
 
-```bash
-git clone https://github.com/microsoft/trivia-challenge.git
-cd trivia-challenge
-npm ci --include=dev &&
-  npm --prefix rayfin/functions ci --include=dev &&
-  npx rayfin --version
-```
+1. Clone the repository and install both sets of dependencies using [Deploy the application](docs/deployment.md#1-install-dependencies-and-the-cli).
+2. Follow the rest of the deployment guide to deploy the app, connect analytics, and configure backend credentials. Deployment creates or updates billable cloud resources.
+3. Open `https://<your-app-host>/operator`. Select **Sign in operator with Fabric**, then **Load questions and create pools**.
+4. Follow [Prepare and import questions](docs/questions.md). Use [examples/questions.csv](examples/questions.csv) or select **Use sample questions** to start with four questions. Preview and confirm the import; questions are not loaded automatically.
+5. Follow [Run a kiosk](docs/operations.md) to assign a station ID and complete a game with each operator account before admitting attendees.
 
-The frontend and Functions have separate dependency lockfiles, so both installation commands are required. Packages are downloaded from the public npm registry. The CLI is the `@microsoft/rayfin-cli` development dependency, which provides the `rayfin` command. The version command must succeed before continuing; see [Install dependencies and the CLI](docs/deployment.md#1-install-dependencies-and-the-cli).
+### Player flow
 
-### 2. Deploy to Fabric
+New adventurers choose a country or region and three different runes in order. Registration reveals a generated name and a private four-character code. The code is shown only on this confirmation screen. Players keep their code and spell, then select **Begin trivia**.
 
-Follow [Deploy the application](docs/deployment.md) to create the app, provision analytics, and configure the backend. Use your own tenant and workspace; the repository does not provide a shared hosted instance.
+Returning adventurers enter their masked code and the same rune sequence. After a game, wait for the result to finish saving before selecting **Play Again**.
 
-### 3. Load questions
-
-Open `https://<your-app-host>/operator` and select **Sign in operator with Fabric** if prompted. On the operator setup page, select **Load questions and create pools**. Bookmark `/operator` for staff; attendee screens do not have an operator setup button.
-
-Select **Use sample questions** to preview the bundled four-question example, or choose your own CSV file. Confirm any missing pools and then select **Import questions**. The sample and file upload use the same authenticated, transactional importer.
-
-Use [examples/questions.csv](examples/questions.csv) as a starting point for your own question bank. The [Excel and CSV guide](docs/questions.md) defines every column, explains the correct-answer numbering, and walks through the destination preview and duplicate-file confirmation.
-
-### 4. Run the challenge
-
-Return to player entry. New adventurers select **Start a new adventure**, choose their country or region, and select three different runes in order from the nine-item keypad. After the spell animation and server registration finish, their generated name and four-character code appear automatically. They keep their code and spell, then select **Begin trivia**. Returning adventurers enter their code; selecting the third rune verifies their spell automatically. No real name, email, phone number, city, or state is requested. The selected country is saved with the player and included in gameplay analytics. Each player then selects a pool, reads the instructions, and plays. Wait for the result to finish saving before selecting **Play Again** for the next attendee.
-
-Edit [country-names.txt](rayfin/functions/src/country-names.txt) to replace the country picker options, one approved name per line. Browser and Functions builds generate the shared list automatically. See [Run a kiosk](docs/operations.md#enter-as-an-adventurer) before changing names already assigned to players.
-
-For station setup and event operation, see [Run a kiosk](docs/operations.md).
+The app does not request names or contact details from attendees. Generated identities, selected countries, and linked gameplay remain pseudonymous data. Review access, retention, and public-reporting requirements before collecting or publishing them.
 
 ## Development
 
-Run these commands from the repository root:
+After installing dependencies, run these checks from the repository root:
 
 ```bash
 npm run build
+npm run build:functions
 npm run schema:check
 npm test
 npm run lint
 ```
 
-For frontend development:
+`npm run dev:frontend` serves the UI at `http://127.0.0.1:5173`, without working Fabric sign-in or gameplay. `npm run dev` starts a Fabric-backed Rayfin workflow that can change cloud resources. Use a dedicated test workspace, not an event workspace.
 
-```bash
-npm run dev:frontend
-```
-
-Vite serves the frontend at `http://127.0.0.1:5173`. Fabric sign-in and gameplay remain unavailable on localhost. Use a dedicated Fabric deployment for the complete application.
-
-`npm run dev` starts Rayfin's Fabric-backed development workflow and can create or update cloud resources. It is not an offline alternative.
-
-### Adventurer names
-
-Edit [player-name-words.txt](rayfin/functions/src/player-name-words.txt), with one entry per line under `[prefixes]` and `[titles]`. A player receives a name such as `Velvet Data Druid`. Only collisions add a sequence number: `Velvet Data Druid 2`, then `3`, and so on. Names have no random numeric suffix.
-
-`npm run names:generate` updates the shared generated word module. Frontend and Functions builds, type checking, and tests also run this step automatically. Do not edit `playerNameWords.generated.ts` directly. Retain words used by existing players unless you have a reviewed name migration; the same vocabulary validates responses and telemetry. Review the words before publication; the list is not legal or trademark clearance.
+See [Contributing](CONTRIBUTING.md) for targeted tests, editable country and name lists, and documentation requirements.
 
 ## Project structure
 
@@ -99,18 +78,28 @@ Edit [player-name-words.txt](rayfin/functions/src/player-name-words.txt), with o
 
 ## Documentation
 
-| Guide | Contents |
+| Guide | Use it to |
 | --- | --- |
 | [Deployment](docs/deployment.md) | Prerequisites, first deployment, updates, and backend configuration |
 | [Excel and CSV questions](docs/questions.md) | Spreadsheet layout, answer keys, pools, metadata, and import errors |
 | [Kiosk operation](docs/operations.md) | Operator sign-in, station IDs, player handoff, and troubleshooting |
 | [Architecture](docs/architecture.md) | Components, game rules, data storage, and request handling |
 | [Telemetry](docs/telemetry-events.md) | Event reference, delivery monitoring, privacy, and report queries |
-| [Power BI leaderboard draft](docs/power-bi-leaderboard.md) | Fabio authoring workflow, DirectQuery, near-live refresh, and anonymous embedding setup |
+| [Contributing](CONTRIBUTING.md) | Make, validate, and submit code or documentation changes |
+
+## Limitations
+
+- This sample is designed for supervised kiosks, not adversarial or prize-bearing competitions. The browser receives answer keys and controls the game timer.
+- A code and rune spell identify a returning adventurer. They do not prove a person's identity or enforce one entry per person.
+- All authorized operator sessions can load questions. The app has no separate question-administrator role.
+- Active games and pending writes are held in browser memory. Refreshing or closing a tab cannot resume them.
+- Telemetry is best effort. A saved SQL result does not guarantee delivery to a report.
 
 ## Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to agree to a Contributor License Agreement declaring that you have the right to grant us the rights to use your contribution. For details, visit [Contributor License Agreements](https://cla.opensource.microsoft.com).
+
+Read [Contributing](CONTRIBUTING.md) before opening a pull request.
 
 When you submit a pull request, a CLA bot determines whether you need to provide a CLA. Follow its instructions. You only need to do this once across repositories using our CLA.
 

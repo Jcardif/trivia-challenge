@@ -1,3 +1,4 @@
+import { ClientSecretCredential } from '@azure/identity'
 import type { RayfinContext } from '@microsoft/fabric-user-data-functions'
 import { Connection, Request, TYPES } from 'tedious'
 
@@ -109,6 +110,25 @@ export function* insertBatches(
   }
 }
 
+// One current credential lets a warm worker reuse its in-memory Entra token across fresh SQL connections.
+let currentSqlCredential: {
+  tenantId: string
+  clientId: string
+  clientSecret: string
+  credential: ClientSecretCredential
+} | undefined
+
+function sqlCredential(tenantId: string, clientId: string, clientSecret: string): ClientSecretCredential {
+  const current = currentSqlCredential
+  if (current?.tenantId === tenantId && current.clientId === clientId && current.clientSecret === clientSecret) {
+    return current.credential
+  }
+  currentSqlCredential = undefined
+  const credential = new ClientSecretCredential(tenantId, clientId, clientSecret)
+  currentSqlCredential = { tenantId, clientId, clientSecret, credential }
+  return credential
+}
+
 export async function withSql<T>(ctx: RayfinContext, action: (sql: SqlSession) => Promise<T>): Promise<T> {
   const server = ctx.getSecret('TRIVIA_SQL_SERVER')?.trim()
   const database = ctx.getSecret('TRIVIA_SQL_DATABASE')?.trim()
@@ -116,14 +136,13 @@ export async function withSql<T>(ctx: RayfinContext, action: (sql: SqlSession) =
   const clientId = ctx.getSecret('TRIVIA_SQL_CLIENT_ID')?.trim()
   const clientSecret = ctx.getSecret('TRIVIA_SQL_CLIENT_SECRET')
   if (!server || !database || !tenantId || !clientId || !clientSecret?.trim()) {
+    currentSqlCredential = undefined
     throw new Error('Server-only SQL application-identity configuration is missing.')
   }
+  const credential = sqlCredential(tenantId, clientId, clientSecret)
   const connection = new Connection({
     server,
-    authentication: {
-      type: 'azure-active-directory-service-principal-secret',
-      options: { tenantId, clientId, clientSecret },
-    },
+    authentication: { type: 'token-credential', options: { credential } },
     options: {
       database, port: 1433, encrypt: true, trustServerCertificate: false,
       connectTimeout: 60_000, requestTimeout: 60_000, useColumnNames: false, lowerCaseGuids: true,
@@ -141,6 +160,10 @@ export async function withSql<T>(ctx: RayfinContext, action: (sql: SqlSession) =
         if (error) reject(error)
         else resolve()
       })
+    }).catch((error: unknown) => {
+      // Fetch a fresh token after a failed login instead of retrying with the cached one.
+      if (currentSqlCredential?.credential === credential) currentSqlCredential = undefined
+      throw error
     })
     if (connectionFailure) throw connectionFailure
     return await action(new SqlSession(connection))

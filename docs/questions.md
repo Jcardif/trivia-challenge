@@ -4,6 +4,8 @@ The application imports **UTF-8, comma-delimited CSV files**. Excel workbooks su
 
 Start with [examples/questions.csv](../examples/questions.csv). It contains four sample questions, uses each valid answer key once, and assigns every question to the `fabric-basics` pool.
 
+Before importing, complete [deployment](deployment.md) and sign in with an authorized operator account. All authorized operators can import questions; the app has no separate question-administrator role. Finish any active game before opening operator setup.
+
 ## 1. Set up the worksheet
 
 Open the sample in Excel or create a worksheet with the following headers in row 1. Enter one question per row, starting at row 2. Header spelling and capitalization must match exactly.
@@ -129,4 +131,6 @@ For most ordinary text, one character is one UTF-16 code unit. Some characters, 
 | Text or file exceeds its limit | Shorten the affected field or split the source into smaller imports. |
 | File has already been imported | Review the import again and confirm another copy only if intended. |
 
-The game loads the selected pool's full question set at session start. Large pools take longer to load, even when each import is below the file-size limit.
+Import large files before opening kiosks. Preview and import each upload the CSV, and the import saves its rows in one SQL transaction. The 10 MiB file limit does not guarantee that the operation finishes within the Function invocation limit. Test the largest planned import in your deployment before the event.
+
+Each game copies the complete selected pool into a saved session draw and downloads it before play. Larger pools increase startup work and storage per game, even when individual imports are below the file-size limit.
