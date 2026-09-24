@@ -164,6 +164,7 @@ The **Existing icon path** field accepts an asset path. These pool icons are inc
 /pools/default.svg
 /pools/fabric-basics.svg
 /pools/fabric.png
+/pools/fabric.svg
 /pools/ignite-2026.svg
 /pools/sql.svg
 ```
