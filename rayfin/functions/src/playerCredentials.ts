@@ -1,35 +1,35 @@
 import { randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
-import {
-  PLAYER_NAME_PREFIXES,
-  PLAYER_NAME_TITLES,
-  RUNE_CATALOG_VERSION,
-  type RuneSpell,
-} from './playerIdentity.js'
+import { PLAYER_NAME_PREFIXES, PLAYER_NAME_TITLES } from './playerIdentity.js'
 
 const HASH_PREFIX = 'scrypt-v1'
 const HASH_PATTERN = /^scrypt-v1:([a-f0-9]{32}):([a-f0-9]{64})$/
 export const UNKNOWN_PLAYER_HASH = `${HASH_PREFIX}:${'0'.repeat(32)}:${'0'.repeat(64)}`
 
-function deriveSpell(spell: RuneSpell, salt: Buffer): Promise<Buffer> {
-  const input = JSON.stringify([RUNE_CATALOG_VERSION, ...spell])
+function derivePassword(password: string, salt: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    scrypt(input, salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }, (error, key) => {
-      if (error) reject(error)
-      else resolve(key)
-    })
+    scrypt(
+      password.normalize('NFC'),
+      salt,
+      32,
+      { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 },
+      (error, key) => {
+        if (error) reject(error)
+        else resolve(key)
+      }
+    )
   })
 }
 
-export async function hashRuneSpell(spell: RuneSpell): Promise<string> {
+export async function hashPlayerPassword(password: string): Promise<string> {
   const salt = randomBytes(16)
-  const hash = await deriveSpell(spell, salt)
+  const hash = await derivePassword(password, salt)
   return `${HASH_PREFIX}:${salt.toString('hex')}:${hash.toString('hex')}`
 }
 
-export async function verifyRuneSpell(spell: RuneSpell, stored: string): Promise<boolean> {
+export async function verifyPlayerPassword(password: string, stored: string): Promise<boolean> {
   const match = HASH_PATTERN.exec(stored)
-  if (!match) throw new Error('Stored spell verifier is invalid.')
-  const hash = await deriveSpell(spell, Buffer.from(match[1], 'hex'))
+  if (!match) throw new Error('Stored password verifier is invalid.')
+  const hash = await derivePassword(password, Buffer.from(match[1], 'hex'))
   return timingSafeEqual(hash, Buffer.from(match[2], 'hex'))
 }
 

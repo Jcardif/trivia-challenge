@@ -7,52 +7,52 @@ const questionId = '22222222-2222-4222-8222-222222222222'
 const answer = { sessionId, questionId, answerIndex: 0, timeElapsed: 0.123456789, isCorrect: false }
 
 describe('operation validation', () => {
-  it('normalizes returning codes without accepting contact details or changing rune order', () => {
+  it('normalizes returning names without accepting contact details or changing the password', () => {
     expect(registrationInput({
-      mode: 'returning', playerCode: ' k-042 ', runeVersion: 1,
-      runes: ['notebook', 'lakehouse', 'warehouse'],
+      mode: 'returning', name: '  amber  query crafter 2 ', password: ' Otter 42 ',
     })).toEqual({
-      mode: 'returning', playerCode: 'K042', runeVersion: 1,
-      runes: ['notebook', 'lakehouse', 'warehouse'],
+      mode: 'returning', name: 'Amber Query Crafter 2', password: ' Otter 42 ',
     })
     expect(registrationInput({
-      mode: 'new', requestId: sessionId.toUpperCase(), country: 'Canada', runeVersion: 1,
-      runes: ['notebook', 'lakehouse', 'warehouse'],
-    })).toMatchObject({ requestId: sessionId })
-    expect(() => registrationInput({ email: 'test@example.invalid', name: 'Person' })).toThrow(DomainError)
+      mode: 'new', requestId: sessionId.toUpperCase(), country: 'Canada', password: 'otter-42',
+    })).toEqual({ mode: 'new', requestId: sessionId, country: 'Canada', password: 'otter-42' })
+    expect(() => registrationInput({ email: 'test@example.invalid', name: 'Amber Query Crafter' })).toThrow(DomainError)
   })
 
   it.each([undefined, null, '', ' ', 'Unlisted country', 'Canada, Ontario', 'canada', 1, {}])(
     'rejects new-player countries outside the approved list: %j',
     country => {
       expect(() => registrationInput({
-        mode: 'new', requestId: sessionId, country, runeVersion: 1,
-        runes: ['notebook', 'lakehouse', 'warehouse'],
+        mode: 'new', requestId: sessionId, country, password: 'otter-42',
       })).toThrow('Choose a country or region from the list.')
     }
   )
 
   it.each([
-    { runes: ['lakehouse', 'lakehouse', 'notebook'] },
-    { runes: ['lakehouse', 'notebook'] },
-    { runes: ['lakehouse', 'notebook', 'invented'] },
-    { runes: ['lakehouse', 'notebook', 'report'] },
-    { runes: ['lakehouse', 'notebook', 'semantic-model'] },
-    { runes: ['lakehouse', 'notebook', 'ml-model'] },
-    { runeVersion: 2 },
+    { password: undefined },
+    { password: 'abc' },
+    { password: '    ' },
+    { password: 'x'.repeat(65) },
+    { password: 1234 },
     { mode: 'other' },
-    { playerCode: 'I123' },
-    { playerCode: 'K1234' },
-    { playerCode: 'K12345' },
-    { email: 'test@example.invalid' },
+    { name: undefined },
     { name: 'Person' },
+    { name: 'Amber Query Crafter 02' },
+    { playerCode: 'K001' },
+    { runes: ['lakehouse', 'notebook', 'warehouse'] },
+    { email: 'test@example.invalid' },
     { phoneNumber: '12345' },
     { country: 'Country' },
   ])('rejects unsupported or private player input %o', overrides => {
     expect(() => registrationInput({
-      mode: 'returning', playerCode: 'K001', runeVersion: 1,
-      runes: ['notebook', 'lakehouse', 'warehouse'], ...overrides,
+      mode: 'returning', name: 'Amber Query Crafter', password: 'otter-42', ...overrides,
     })).toThrow(DomainError)
+  })
+
+  it('rejects a new adventurer without a usable password', () => {
+    expect(() => registrationInput({
+      mode: 'new', requestId: sessionId, country: 'Canada', password: 'abc',
+    })).toThrow('Use a password of 4 to 64 characters.')
   })
 
   it('preserves pool defaults and the slug-shaped contract', () => {

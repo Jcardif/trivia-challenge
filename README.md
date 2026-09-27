@@ -17,7 +17,7 @@ The sample demonstrates a React application backed by Rayfin Functions, transact
 - Play a timed quiz using touch, mouse, or the keyboard.
 - Create question pools and import questions from UTF-8 CSV files.
 - Sign in each kiosk operator with their own Fabric account. Attendees do not need Fabric accounts.
-- Create pseudonymous adventurers using generated names, private return codes, and three-rune spells.
+- Create pseudonymous adventurers using generated names and attendee-chosen passwords.
 - Save game results in SQL and analyze events in Eventhouse.
 
 Question banks, players, and saved games live in the application's **SQL database**. Analytics events live in the **KQL database** under Eventhouse. The repository does not include a Power BI report or an anonymous report-embedding service.
@@ -43,9 +43,9 @@ Command examples use Bash. On Windows, use Git Bash or WSL.
 
 ### Player flow
 
-New adventurers choose a country or region and three different runes in order. Registration reveals a generated name and a private four-character code. The code is shown only on this confirmation screen. Players keep their code and spell, then select **Begin trivia**.
+New adventurers choose a country or region and a password, then confirm the password. Registration reveals a generated adventurer name. Players remember the name and password, then select **Begin trivia**.
 
-Returning adventurers enter their masked code and the same rune sequence. After a game, wait for the result to finish saving before selecting **Play Again**.
+Returning adventurers enter their adventurer name and password. After a game, wait for the result to finish saving. **Play Again** starts another game for the same adventurer. **Reset** returns to an empty entry form for the next attendee.
 
 The app does not request names or contact details from attendees. Generated identities, selected countries, and linked gameplay remain pseudonymous data. Review access, retention, and public-reporting requirements before collecting or publishing them.
 
@@ -92,7 +92,7 @@ See [Contributing](CONTRIBUTING.md) for targeted tests, editable country and nam
 ## Limitations
 
 - This sample is designed for supervised kiosks, not adversarial or prize-bearing competitions. The browser receives answer keys and controls the game timer.
-- A code and rune spell identify a returning adventurer. They do not prove a person's identity or enforce one entry per person.
+- An adventurer name and password identify a returning adventurer. They do not prove a person's identity or enforce one entry per person.
 - All authorized operator sessions can load questions. The app has no separate question-administrator role.
 - Active games and pending writes are held in browser memory. Refreshing or closing a tab cannot resume them.
 - Telemetry is best effort. A saved SQL result does not guarantee delivery to a report.

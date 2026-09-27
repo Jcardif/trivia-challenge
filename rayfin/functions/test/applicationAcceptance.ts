@@ -32,20 +32,20 @@ export async function runApplicationAcceptance(invoke: AuthenticatedAppInvoker):
     return result.data
   }
   const registration = {
-    mode: 'new', requestId: nonce, country: 'Canada', runeVersion: 1, runes: ['lakehouse', 'notebook', 'warehouse'],
+    mode: 'new', requestId: nonce, country: 'Canada', password: `acceptance-${nonce.slice(0, 8)}`,
   } as const
   const [player, duplicatePlayer] = await Promise.all([
     call('registerPlayer', registration), call('registerPlayer', registration),
   ])
   check(JSON.stringify(player) === JSON.stringify(duplicatePlayer), 'concurrent registration must return one stored player')
   const returningPlayer = await call('registerPlayer', {
-    mode: 'returning', playerCode: player.playerCode, runeVersion: 1, runes: registration.runes,
+    mode: 'returning', name: player.name, password: registration.password,
   })
-  check(JSON.stringify(returningPlayer) === JSON.stringify(player), 'returning spell changed the player')
-  const incorrectSpell = await invoke('registerPlayer', {
-    mode: 'returning', playerCode: player.playerCode, runeVersion: 1, runes: ['warehouse', 'notebook', 'lakehouse'],
+  check(JSON.stringify(returningPlayer) === JSON.stringify(player), 'returning password changed the player')
+  const incorrectPassword = await invoke('registerPlayer', {
+    mode: 'returning', name: player.name, password: `${registration.password}-wrong`,
   })
-  check(!incorrectSpell.success && incorrectSpell.code === 'PLAYER_VERIFICATION_FAILED', 'a reordered spell was accepted')
+  check(!incorrectPassword.success && incorrectPassword.code === 'PLAYER_VERIFICATION_FAILED', 'an incorrect password was accepted')
 
   const csvHeader = 'Category,Question,Answer1,Answer2,Answer3,Answer4,CorrectAnswerKey,Metadata,Pools'
   const csv = `${csvHeader}\n` + Array.from({ length: 101 }, (_, i) =>

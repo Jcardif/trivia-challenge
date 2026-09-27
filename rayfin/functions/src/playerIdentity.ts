@@ -1,62 +1,19 @@
-export const RUNE_CATALOG_VERSION = 1
-export const RUNE_COUNT = 3
+export const PLAYER_NAME_MAX_LENGTH = 96
+export const PLAYER_PASSWORD_MIN_LENGTH = 4
+export const PLAYER_PASSWORD_MAX_LENGTH = 64
 
-// Keep version 1 IDs and their meaning stable so saved spells continue to verify.
-export const ITEM_RUNES = [
-  { id: 'lakehouse', label: 'Lakehouse' },
-  { id: 'warehouse', label: 'Warehouse' },
-  { id: 'notebook', label: 'Notebook' },
-  { id: 'data-pipeline', label: 'Data Pipeline' },
-  { id: 'dataflow-gen2', label: 'Dataflow Gen2' },
-  { id: 'sql-database', label: 'SQL Database' },
-  { id: 'eventhouse', label: 'Eventhouse' },
-  { id: 'eventstream', label: 'Eventstream' },
-  { id: 'activator', label: 'Activator' },
-] as const
-
-export type RuneId = (typeof ITEM_RUNES)[number]['id']
-export type RuneSpell = readonly [RuneId, RuneId, RuneId]
-
-const runeIds: ReadonlySet<string> = new Set(ITEM_RUNES.map(rune => rune.id))
-
-export function isRuneId(value: unknown): value is RuneId {
-  return typeof value === 'string' && runeIds.has(value)
+function passwordLength(value: string): number {
+  return [...value.normalize('NFC')].length
 }
 
-export function isRuneSpell(value: unknown): value is RuneSpell {
-  return (
-    Array.isArray(value) &&
-    value.length === RUNE_COUNT &&
-    [...value].every(isRuneId) &&
-    new Set(value).size === RUNE_COUNT
-  )
-}
-
-export const PLAYER_CODE_LETTERS = 'ABCDEFGHJKMNPQRSTVWXYZ'
-export const PLAYER_CODE_LENGTH = 4
-export const PLAYER_CODE_CAPACITY = PLAYER_CODE_LETTERS.length * 1000
-
-export function normalizePlayerCode(value: string): string {
-  return value.trim().toUpperCase().replace(/[\s-]/g, '')
-}
-
-export function isPlayerCode(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length === PLAYER_CODE_LENGTH &&
-    /^[ABCDEFGHJKMNPQRSTVWXYZ][0-9]{3}$/.test(value)
-  )
-}
-
-export function playerCodeAt(index: number): string {
-  if (!Number.isInteger(index) || index < 0 || index >= PLAYER_CODE_CAPACITY) {
-    throw new Error('Player code index is outside the available range.')
-  }
-  return `${PLAYER_CODE_LETTERS[Math.floor(index / 1000)]}${String(index % 1000).padStart(3, '0')}`
+export function isPlayerPassword(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false
+  const length = passwordLength(value)
+  return length >= PLAYER_PASSWORD_MIN_LENGTH && length <= PLAYER_PASSWORD_MAX_LENGTH
 }
 
 export function isGeneratedPlayerName(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length > 96) return false
+  if (typeof value !== 'string' || value.length > PLAYER_NAME_MAX_LENGTH) return false
   if (baseNames.has(value)) return true
   const match = /^(.*) ([1-9]\d*)$/.exec(value)
   if (!match) return false
@@ -64,8 +21,19 @@ export function isGeneratedPlayerName(value: unknown): value is string {
   return counter >= 2 && counter <= 2_147_483_647 && baseNames.has(match[1])
 }
 
+// Returning players type their name, so accept any letter case and spacing and restore the stored spelling.
+export function normalizePlayerName(value: string): string {
+  const collapsed = value.trim().replace(/\s+/g, ' ')
+  const exact = canonicalBaseNames.get(collapsed.toLowerCase())
+  if (exact) return exact
+  const match = /^(.*) (\d+)$/.exec(collapsed)
+  const base = match && canonicalBaseNames.get(match[1].toLowerCase())
+  return base ? `${base} ${match[2]}` : collapsed
+}
+
 const baseNames = new Set(
   PLAYER_NAME_PREFIXES.flatMap(prefix => PLAYER_NAME_TITLES.map(title => `${prefix} ${title}`))
 )
+const canonicalBaseNames = new Map([...baseNames].map(name => [name.toLowerCase(), name]))
 import { PLAYER_NAME_PREFIXES, PLAYER_NAME_TITLES } from './playerNameWords.generated.js'
 export { PLAYER_NAME_PREFIXES, PLAYER_NAME_TITLES } from './playerNameWords.generated.js'

@@ -1,14 +1,13 @@
-import { randomInt } from 'node:crypto'
 import type { RayfinContext } from '@microsoft/fabric-user-data-functions'
 import type { User } from './contracts.js'
 import { DomainError } from './errors.js'
 import {
   generatePlayerName,
-  hashRuneSpell,
+  hashPlayerPassword,
   UNKNOWN_PLAYER_HASH,
-  verifyRuneSpell,
+  verifyPlayerPassword,
 } from './playerCredentials.js'
-import { PLAYER_CODE_CAPACITY, PLAYER_CODE_LENGTH, playerCodeAt, RUNE_CATALOG_VERSION } from './playerIdentity.js'
+import { PLAYER_NAME_MAX_LENGTH } from './playerIdentity.js'
 import { isCountry, normalizeCountry } from './countries.js'
 import {
   date,
@@ -16,6 +15,7 @@ import {
   int,
   rowDate,
   rowNumber,
+  rowOptionalText,
   rowText,
   rowUuid,
   str,
@@ -33,7 +33,7 @@ export const PLAYER_ENTRY_LIMITS = {
 
 const ENTRY_STATE_ID = '00000000-0000-4000-8000-000000000001'
 const PLAYER_COLUMNS =
-  '[id], [playerCode], [name], [country], [runeHash], [runeVersion], [failedAttempts], [attemptWindowStartedAt], [createdAt]'
+  '[id], [name], [country], [passwordHash], [failedAttempts], [attemptWindowStartedAt], [createdAt]'
 
 function playerDto(row: SqlRow): User {
   const country = normalizeCountry(rowText(row, 'country'))
@@ -41,7 +41,6 @@ function playerDto(row: SqlRow): User {
   return {
     userId: rowUuid(row, 'id'),
     name: rowText(row, 'name'),
-    playerCode: rowText(row, 'playerCode'),
     country,
     createdAt: rowDate(row, 'createdAt'),
   }
@@ -50,7 +49,7 @@ function playerDto(row: SqlRow): User {
 function verificationFailure(): DomainError {
   return new DomainError(
     'PLAYER_VERIFICATION_FAILED',
-    'That code and spell could not be verified. Check both, or wait 15 minutes before trying again.'
+    'That name and password could not be verified. Check both, or wait 15 minutes before trying again.'
   )
 }
 
@@ -82,28 +81,6 @@ async function reserveEntryAttempt(sql: SqlSession, now: Date): Promise<boolean>
   return true
 }
 
-async function availableCode(sql: SqlSession): Promise<string | DomainError> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const candidate = playerCodeAt(randomInt(PLAYER_CODE_CAPACITY))
-    const rows = await sql.query('SELECT [id] FROM [dbo].[Players] WHERE [playerCode] = @code;', {
-      code: str(candidate, PLAYER_CODE_LENGTH),
-    })
-    if (rows.length === 0) return candidate
-  }
-  // Near capacity, scan remaining codes rather than mistaking repeated random collisions for exhaustion.
-  const rows = await sql.query('SELECT [playerCode] FROM [dbo].[Players];')
-  const used = new Set(rows.map(row => rowText(row, 'playerCode')))
-  const start = randomInt(PLAYER_CODE_CAPACITY)
-  for (let offset = 0; offset < PLAYER_CODE_CAPACITY; offset++) {
-    const candidate = playerCodeAt((start + offset) % PLAYER_CODE_CAPACITY)
-    if (!used.has(candidate)) return candidate
-  }
-  return new DomainError(
-    'PLAYER_CODES_EXHAUSTED',
-    'All adventurer codes have been issued. Contact an operator.'
-  )
-}
-
 async function availableName(sql: SqlSession): Promise<string | DomainError> {
   const base = generatePlayerName()
   const prefix = base
@@ -117,7 +94,7 @@ async function availableName(sql: SqlSession): Promise<string | DomainError> {
       COALESCE(MAX(CASE WHEN [name] = @name THEN 1
         ELSE TRY_CONVERT(INT, SUBSTRING([name], LEN(@name) + 2, 96)) END), 0) AS [highestSuffix]
       FROM [dbo].[Players] WHERE [name] = @name OR [name] LIKE @prefix ESCAPE N'~';`,
-    { name: str(base, 96), prefix: str(`${prefix} %`, 200) }
+    { name: str(base, PLAYER_NAME_MAX_LENGTH), prefix: str(`${prefix} %`, 200) }
   )
   if (!row) throw new Error('Player name allocation did not return an aggregate.')
   if (rowNumber(row, 'hasBase') === 0) return base
@@ -145,17 +122,20 @@ export async function registerPlayer(ctx: RayfinContext, value: unknown): Promis
       }
       const [existing] = await transaction.query(
         `SELECT ${PLAYER_COLUMNS} FROM [dbo].[Players] WITH (UPDLOCK, HOLDLOCK) WHERE ` +
-          (input.mode === 'new' ? '[id] = @id;' : '[playerCode] = @code;'),
-        input.mode === 'new' ? { id: id(input.requestId) } : { code: str(input.playerCode, PLAYER_CODE_LENGTH) }
+          (input.mode === 'new' ? '[id] = @id;' : '[name] = @name;'),
+        input.mode === 'new'
+          ? { id: id(input.requestId) }
+          : { name: str(input.name, PLAYER_NAME_MAX_LENGTH) }
       )
       if (existing) {
         const expired =
           now.getTime() - Date.parse(rowDate(existing, 'attemptWindowStartedAt')) >=
           PLAYER_ENTRY_LIMITS.playerWindowMs
         const failures = expired ? 0 : rowNumber(existing, 'failedAttempts')
-        const matches = await verifyRuneSpell(input.runes, rowText(existing, 'runeHash'))
+        const stored = rowOptionalText(existing, 'passwordHash')
+        const verified = await verifyPlayerPassword(input.password, stored ?? UNKNOWN_PLAYER_HASH)
         if (failures >= PLAYER_ENTRY_LIMITS.failuresPerPlayer) return verificationFailure()
-        if (!matches || rowNumber(existing, 'runeVersion') !== RUNE_CATALOG_VERSION) {
+        if (!verified || stored === undefined) {
           await transaction.query(
             'UPDATE [dbo].[Players] SET [failedAttempts] = @failures, [attemptWindowStartedAt] = @started WHERE [id] = @id;',
             {
@@ -179,23 +159,19 @@ export async function registerPlayer(ctx: RayfinContext, value: unknown): Promis
         return playerDto(existing)
       }
       if (input.mode === 'returning') {
-        await verifyRuneSpell(input.runes, UNKNOWN_PLAYER_HASH)
+        await verifyPlayerPassword(input.password, UNKNOWN_PLAYER_HASH)
         return verificationFailure()
       }
-      const playerCode = await availableCode(transaction)
-      if (playerCode instanceof DomainError) return playerCode
       const name = await availableName(transaction)
       if (name instanceof DomainError) return name
-      const runeHash = await hashRuneSpell(input.runes)
+      const passwordHash = await hashPlayerPassword(input.password)
       await transaction.insert(
         'Players',
         [
           'id',
-          'playerCode',
           'name',
           'country',
-          'runeHash',
-          'runeVersion',
+          'passwordHash',
           'failedAttempts',
           'attemptWindowStartedAt',
           'createdAt',
@@ -203,18 +179,16 @@ export async function registerPlayer(ctx: RayfinContext, value: unknown): Promis
         [
           [
             id(input.requestId),
-            str(playerCode, PLAYER_CODE_LENGTH),
-            str(name, 96),
+            str(name, PLAYER_NAME_MAX_LENGTH),
             str(input.country, 80),
-            str(runeHash, 160),
-            int(RUNE_CATALOG_VERSION),
+            str(passwordHash, 160),
             int(0),
             date(now),
             date(now),
           ],
         ]
       )
-      return { userId: input.requestId, name, playerCode, country: input.country, createdAt: now.toISOString() }
+      return { userId: input.requestId, name, country: input.country, createdAt: now.toISOString() }
     })
   )
   // Failed-attempt counters must commit; throwing inside the transaction would undo them.

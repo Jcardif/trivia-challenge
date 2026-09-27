@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, Check, MapPin, Star } from 'lucide-react'
+import { ArrowRight, Check, KeyRound, MapPin, UserRound } from 'lucide-react'
 import EntryCountryPicker from '../components/EntryCountryPicker'
-import ItemRunePicker, { SelectedRuneSlots } from '../components/ItemRunePicker'
 import StationAvatar from '../components/StationAvatar'
 import { useGame } from '../context/GameContext'
 import { userService } from '../services/userService'
@@ -11,114 +10,20 @@ import { analytics } from '../services/analyticsService'
 import { isCountry } from '../../rayfin/functions/src/countries'
 import { getStationLockdownMessage, isStationLockdownActive } from '../lib/stationLockdown'
 import {
-  isPlayerCode,
-  isRuneSpell,
-  normalizePlayerCode,
-  PLAYER_CODE_LENGTH,
-  RUNE_CATALOG_VERSION,
-  RUNE_COUNT,
-  type RuneId,
-  type RuneSpell,
+  isGeneratedPlayerName,
+  isPlayerPassword,
+  normalizePlayerName,
+  PLAYER_NAME_MAX_LENGTH,
+  PLAYER_PASSWORD_MAX_LENGTH,
+  PLAYER_PASSWORD_MIN_LENGTH,
 } from '../../rayfin/functions/src/playerIdentity'
 import type { RegisterUserRequest, User } from '../types/api'
 import './SignInPage.css'
 
-// The longest seal animation lasts 1.6 seconds.
-const SPELL_REVEAL_DELAY_MS = 1700
+type InvalidField = 'name' | 'password' | 'confirm' | null
 
-function PlayerCodeInput({
-  value,
-  disabled,
-  invalid,
-  onChange,
-  onBlur,
-}: {
-  value: string
-  disabled: boolean
-  invalid: boolean
-  onChange: (value: string) => void
-  onBlur: () => void
-}) {
-  const [selection, setSelection] = useState({ start: 0, end: 0 })
-  return (
-    <label className="entry-field entry-code">
-      <span className="entry-control-label" data-current={!isPlayerCode(value)}>
-        <b>01</b> Enter your adventurer code
-      </span>
-      <span className="entry-code-lock">
-        <span className="entry-code-cells" aria-hidden="true">
-          {Array.from({ length: PLAYER_CODE_LENGTH }, (_, index) => (
-            <span
-              key={index}
-              data-filled={Boolean(value[index])}
-              data-cursor={index === Math.min(selection.start, PLAYER_CODE_LENGTH - 1)}
-              data-selected={index >= selection.start && index < selection.end}
-            >
-              {value[index] ? '*' : '-'}
-            </span>
-          ))}
-        </span>
-        <input
-          type="password"
-          name="playerCode"
-          aria-label="Adventurer code"
-          aria-invalid={invalid}
-          aria-describedby={invalid ? 'entry-feedback' : undefined}
-          value={value}
-          placeholder="****"
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          maxLength={PLAYER_CODE_LENGTH}
-          disabled={disabled}
-          onSelect={event =>
-            setSelection({
-              start: event.currentTarget.selectionStart ?? 0,
-              end: event.currentTarget.selectionEnd ?? 0,
-            })
-          }
-          onClick={event => {
-            const bounds = event.currentTarget.getBoundingClientRect()
-            const index = Math.min(
-              value.length,
-              Math.max(
-                0,
-                Math.floor(((event.clientX - bounds.left) / bounds.width) * PLAYER_CODE_LENGTH)
-              )
-            )
-            event.currentTarget.setSelectionRange(index, index)
-          }}
-          onChange={event => onChange(normalizePlayerCode(event.target.value))}
-          onPaste={event => {
-            event.preventDefault()
-            onChange(normalizePlayerCode(event.clipboardData.getData('text')))
-          }}
-          onBlur={onBlur}
-        />
-      </span>
-    </label>
-  )
-}
-
-function moveRuneFocus(event: KeyboardEvent<HTMLDivElement>) {
-  const offsets: Record<string, number> = {
-    ArrowLeft: -1,
-    ArrowRight: 1,
-    ArrowUp: -3,
-    ArrowDown: 3,
-  }
-  if (!(event.key in offsets)) return
-  event.preventDefault()
-  const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('.arcade-rune')]
-  const index = buttons.findIndex(button => button === document.activeElement)
-  if (
-    index < 0 ||
-    (event.key === 'ArrowLeft' && index % 3 === 0) ||
-    (event.key === 'ArrowRight' && index % 3 === 2)
-  )
-    return
-  buttons[index + offsets[event.key]]?.focus()
-}
+const PASSWORD_RULE = `Use a password of ${PLAYER_PASSWORD_MIN_LENGTH} to ${PLAYER_PASSWORD_MAX_LENGTH} characters.`
+const NAME_RULE = 'Enter the adventurer name you were given, such as Amber Query Crafter.'
 
 export default function SignInPage() {
   const navigate = useNavigate()
@@ -126,24 +31,30 @@ export default function SignInPage() {
   const { setPlayer, generation, isCurrentGame } = useGame()
   const mountedRef = useRef(false)
   const submittingRef = useRef(false)
-  const codeHeading = useRef<HTMLHeadingElement>(null)
+  const nameHeading = useRef<HTMLHeadingElement>(null)
+  const nameInput = useRef<HTMLInputElement>(null)
+  const passwordInput = useRef<HTMLInputElement>(null)
+  const confirmInput = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<'new' | 'returning'>('returning')
-  const [playerCode, setPlayerCode] = useState('')
+  const [name, setName] = useState('')
   const [country, setCountry] = useState('')
-  const [runes, setRunes] = useState<RuneId[]>([])
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [pendingCreation, setPendingCreation] = useState<RegisterUserRequest | null>(null)
   const [registered, setRegistered] = useState<User | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [codeInvalid, setCodeInvalid] = useState(false)
-  const [celebrating, setCelebrating] = useState(false)
+  const [invalidField, setInvalidField] = useState<InvalidField>(null)
   const isLockdownActive = isStationLockdownActive()
   const displayedError = isLockdownActive ? getStationLockdownMessage() : error
   const creationFrozen = pendingCreation !== null
-  const issued = registered !== null && !celebrating
-  const controlsDisabled = isSubmitting || creationFrozen || registered !== null || isLockdownActive
-  const detailsReady = mode === 'new' ? isCountry(country) : isPlayerCode(playerCode)
-  const canRetry = Boolean(error) && !registered && detailsReady && isRuneSpell(runes)
+  const issued = registered !== null
+  const controlsDisabled = isSubmitting || creationFrozen || issued || isLockdownActive
+  const detailsReady = mode === 'new' ? isCountry(country) : name.trim().length > 0
+  const secretReady =
+    mode === 'new' ? password.length > 0 && confirmPassword.length > 0 : password.length > 0
+  const canSubmit =
+    !isSubmitting && !isLockdownActive && (creationFrozen || (detailsReady && secretReady))
 
   useEffect(() => {
     mountedRef.current = true
@@ -155,34 +66,28 @@ export default function SignInPage() {
     analytics.track('pageview.home', { path: location.pathname })
   }, [location.pathname])
   useEffect(() => {
-    if (!celebrating) return
-    const timer = window.setTimeout(
-      () => setCelebrating(false),
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : SPELL_REVEAL_DELAY_MS
-    )
-    return () => window.clearTimeout(timer)
-  }, [celebrating])
-  useEffect(() => {
-    if (issued) codeHeading.current?.focus({ preventScroll: true })
+    if (issued) nameHeading.current?.focus({ preventScroll: true })
   }, [issued])
+  useEffect(() => {
+    if (isSubmitting || !invalidField) return
+    const inputs = { name: nameInput, password: passwordInput, confirm: confirmInput }
+    inputs[invalidField].current?.focus({ preventScroll: true })
+  }, [invalidField, isSubmitting])
 
   const startEntry = (nextMode: 'new' | 'returning') => {
     if (submittingRef.current || registered) return
     setMode(nextMode)
-    setRunes([])
-    setPlayerCode('')
+    setName('')
     setCountry('')
+    setPassword('')
+    setConfirmPassword('')
     setPendingCreation(null)
     setError(null)
-    setCodeInvalid(false)
-    setCelebrating(false)
+    setInvalidField(null)
   }
-  const changeRunes = (next: RuneId[]) => {
-    if (controlsDisabled || submittingRef.current || !detailsReady) return
-    setCelebrating(next.length === RUNE_COUNT && runes.length !== RUNE_COUNT)
-    setRunes(next)
-    setError(null)
-    if (isRuneSpell(next)) void submitEntry(next)
+  const reject = (field: InvalidField, message: string) => {
+    setInvalidField(field)
+    setError(message)
   }
   const enterChallenge = (user: User) => {
     if (isStationLockdownActive()) {
@@ -198,40 +103,31 @@ export default function SignInPage() {
     setPlayer(user)
     navigate('/select-pool')
   }
-  const submitEntry = async (selectedRunes = runes) => {
+  const submitEntry = async () => {
     if (submittingRef.current || registered) return
     if (isStationLockdownActive()) {
       setError(getStationLockdownMessage())
       return
     }
-    if (!isRuneSpell(selectedRunes)) {
-      setError('Choose three different item runes in order.')
-      return
+    let request: RegisterUserRequest
+    if (mode === 'new') {
+      if (pendingCreation) request = pendingCreation
+      else {
+        if (!isCountry(country)) return reject(null, 'Choose a country or region from the list.')
+        if (!isPlayerPassword(password)) return reject('password', PASSWORD_RULE)
+        if (password !== confirmPassword) return reject('confirm', "Those passwords don't match.")
+        request = { mode: 'new', requestId: crypto.randomUUID(), country, password }
+        setPendingCreation(request)
+      }
+    } else {
+      const normalizedName = normalizePlayerName(name)
+      if (!isGeneratedPlayerName(normalizedName)) return reject('name', NAME_RULE)
+      if (!isPlayerPassword(password)) return reject('password', PASSWORD_RULE)
+      setName(normalizedName)
+      request = { mode: 'returning', name: normalizedName, password }
     }
-    if (mode === 'new' && !isCountry(country)) {
-      setError('Choose a country or region from the list.')
-      return
-    }
-    if (mode === 'returning' && !isPlayerCode(playerCode)) {
-      setCodeInvalid(true)
-      setError('Use one letter and three digits.')
-      setCelebrating(false)
-      return
-    }
-    const spell: RuneSpell = [selectedRunes[0], selectedRunes[1], selectedRunes[2]]
-    const request: RegisterUserRequest =
-      mode === 'new'
-        ? (pendingCreation ?? {
-            mode: 'new',
-            requestId: crypto.randomUUID(),
-            country,
-            runeVersion: RUNE_CATALOG_VERSION,
-            runes: spell,
-          })
-        : { mode: 'returning', playerCode, runeVersion: RUNE_CATALOG_VERSION, runes: spell }
-    if (mode === 'new') setPendingCreation(request)
     setError(null)
-    setCodeInvalid(false)
+    setInvalidField(null)
     setIsSubmitting(true)
     submittingRef.current = true
     try {
@@ -240,35 +136,39 @@ export default function SignInPage() {
       if (mode === 'new') {
         setRegistered(user)
         setPendingCreation(null)
+        setPassword('')
+        setConfirmPassword('')
       } else enterChallenge(user)
     } catch (failure) {
       if (!mountedRef.current || !isCurrentGame(generation)) return
-      const wrongSpell =
+      const wrongCredentials =
         mode === 'returning' &&
         failure instanceof OperationError &&
         failure.code === 'PLAYER_VERIFICATION_FAILED'
       setError(
-        wrongSpell
-          ? 'Wrong code or spell. Try again, or wait 15 minutes.'
+        wrongCredentials
+          ? 'Wrong name or password. Try again, or wait 15 minutes.'
           : failure instanceof Error
             ? failure.message
             : 'Player entry failed. Please try again.'
       )
-      setCelebrating(false)
-      if (wrongSpell) setRunes([])
+      if (wrongCredentials) {
+        setPassword('')
+        setInvalidField('password')
+      }
     } finally {
       submittingRef.current = false
       if (mountedRef.current && isCurrentGame(generation)) setIsSubmitting(false)
     }
   }
+  const describedBy = (field: InvalidField, ...ids: string[]) =>
+    [...ids, invalidField === field && displayedError ? 'entry-feedback' : '']
+      .filter(Boolean)
+      .join(' ') || undefined
 
   return (
     <div className="player-entry" data-telemetry-private>
-      <div
-        className="entry-board"
-        data-spell-ready={runes.length === RUNE_COUNT}
-        data-spell-celebrating={celebrating}
-      >
+      <div className="entry-board">
         <header className="entry-brand">
           <img src="/fabriclogo.png" alt="Microsoft Fabric" />
           <p>
@@ -280,10 +180,11 @@ export default function SignInPage() {
             className="entry-split"
             aria-label="Adventurer entry"
             autoComplete="off"
-            aria-busy={isSubmitting || celebrating}
+            aria-busy={isSubmitting}
+            noValidate
             onSubmit={event => {
               event.preventDefault()
-              if (canRetry) void submitEntry()
+              if (canSubmit) void submitEntry()
             }}
           >
             <div className="entry-welcome" data-issued={issued}>
@@ -305,39 +206,6 @@ export default function SignInPage() {
                   </h1>
                 </div>
               </div>
-              <div className="entry-details">
-                {issued ? (
-                  <h2 className="entry-player-name">{registered.name}</h2>
-                ) : mode === 'returning' ? (
-                  <PlayerCodeInput
-                    value={playerCode}
-                    disabled={controlsDisabled}
-                    invalid={codeInvalid}
-                    onChange={code => {
-                      setPlayerCode(code)
-                      setRunes([])
-                      setError(null)
-                      setCodeInvalid(false)
-                      setCelebrating(false)
-                    }}
-                    onBlur={() => {
-                      if (playerCode && !isPlayerCode(playerCode)) {
-                        setCodeInvalid(true)
-                        setError('Use one letter and three digits.')
-                      }
-                    }}
-                  />
-                ) : (
-                  <EntryCountryPicker
-                    value={country}
-                    disabled={controlsDisabled}
-                    onChange={value => {
-                      setCountry(value)
-                      setError(null)
-                    }}
-                  />
-                )}
-              </div>
               <div className="entry-player-footer">
                 {issued ? (
                   <p className="entry-saved-country">
@@ -352,8 +220,8 @@ export default function SignInPage() {
                       onClick={() => startEntry(mode === 'returning' ? 'new' : 'returning')}
                     >
                       {mode === 'returning'
-                        ? "Start a new adventure if you're new or forgot your code or spell."
-                        : 'I already have a code'}
+                        ? "Start a new adventure if you're new or forgot your name or password."
+                        : 'I already have an adventurer name'}
                       <ArrowRight size={17} aria-hidden="true" />
                     </button>
                     {creationFrozen && !isSubmitting && (
@@ -369,70 +237,145 @@ export default function SignInPage() {
                 )}
               </div>
             </div>
-            <div
-              className="arcade-machine entry-lock"
-              data-spell-ready={runes.length === RUNE_COUNT}
-              data-spell-celebrating={celebrating}
-              data-entry-error={displayedError || undefined}
-            >
-              <div className="entry-spell-tray">
-                <div className="entry-spell-copy">
-                  <div className="entry-control-label" data-current={detailsReady && !issued}>
-                    <b>{issued ? <Check size={15} aria-label="Complete" /> : '02'}</b>
-                    <h2>
-                      {issued
-                        ? 'Keep this rune order to unlock your adventure when you return.'
-                        : mode === 'returning'
-                          ? 'Recast your 3 runes in the same order to rejoin the adventure.'
-                          : runes.length === RUNE_COUNT && !displayedError
-                            ? 'Forging your adventurer. Your code is coming next.'
-                            : 'Choose 3 runes in an order to remember. Your code appears next.'}
-                    </h2>
-                    <span className="entry-rune-count" aria-hidden="true">
-                      {runes.length} / 3
-                    </span>
-                  </div>
-                </div>
-                <SelectedRuneSlots
-                  value={runes}
-                  onChange={changeRunes}
-                  disabled={controlsDisabled}
-                />
-              </div>
+            <div className="entry-lock" data-entry-error={displayedError || undefined}>
+              <h2 className="entry-secret-heading">
+                {issued
+                  ? 'Remember your name and password to return.'
+                  : mode === 'returning'
+                    ? 'Welcome back. Enter the adventurer name you were given and your password.'
+                    : 'Choose your country or region and a password. Your adventurer name appears next.'}
+              </h2>
               {issued ? (
-                <section className="entry-code-reveal" aria-label="Your adventurer is ready">
-                  <div className="entry-issued-code">
+                <section className="entry-name-reveal" aria-label="Your adventurer is ready">
+                  <div className="entry-issued-name">
                     <h2
-                      ref={codeHeading}
+                      ref={nameHeading}
                       tabIndex={-1}
                       className="entry-control-label"
-                      aria-describedby="entry-issued-value entry-code-reminder"
+                      aria-describedby="entry-issued-value entry-name-reminder"
                     >
-                      Keep your adventurer code
+                      <b>
+                        <Check size={15} aria-hidden="true" />
+                      </b>
+                      Remember your adventurer name
                     </h2>
-                    <output
-                      id="entry-issued-value"
-                      className="entry-code-cells"
-                      aria-label="Adventurer code"
-                    >
-                      {registered.playerCode.split('').map((character, index) => (
-                        <span key={index} data-filled="true">
-                          {character}
-                        </span>
-                      ))}
+                    <output id="entry-issued-value" aria-label="Adventurer name">
+                      {registered.name}
                     </output>
-                    <p id="entry-code-reminder">
-                      Shown only here. Keep this code and your 3-rune spell private to return.
+                    <p id="entry-name-reminder">
+                      To return, enter this name and the password you just chose.
                     </p>
                   </div>
                 </section>
               ) : (
-                <div className="entry-keypad" onKeyDown={moveRuneFocus}>
-                  <ItemRunePicker
-                    value={runes}
-                    onChange={changeRunes}
-                    disabled={!detailsReady || controlsDisabled}
-                  />
+                <div className="entry-secret">
+                  {mode === 'returning' ? (
+                    <label className="entry-field">
+                      <span className="entry-control-label" data-current={!detailsReady}>
+                        <b>01</b> Enter your adventurer name
+                      </span>
+                      <span className="entry-input-shell">
+                        <UserRound size={22} aria-hidden="true" />
+                        <input
+                          ref={nameInput}
+                          className="entry-input"
+                          type="text"
+                          name="adventurerName"
+                          aria-label="Adventurer name"
+                          aria-invalid={invalidField === 'name'}
+                          aria-describedby={describedBy('name')}
+                          value={name}
+                          placeholder="e.g. Amber Query Crafter"
+                          autoComplete="off"
+                          autoCapitalize="words"
+                          spellCheck={false}
+                          maxLength={PLAYER_NAME_MAX_LENGTH}
+                          disabled={controlsDisabled}
+                          onChange={event => {
+                            setName(event.target.value)
+                            setError(null)
+                            setInvalidField(null)
+                          }}
+                        />
+                      </span>
+                    </label>
+                  ) : (
+                    <EntryCountryPicker
+                      value={country}
+                      disabled={controlsDisabled}
+                      onChange={value => {
+                        setCountry(value)
+                        setError(null)
+                      }}
+                    />
+                  )}
+                  <label className="entry-field">
+                    <span className="entry-control-label" data-current={detailsReady && !password}>
+                      <b>02</b> {mode === 'new' ? 'Create a password' : 'Enter your password'}
+                    </span>
+                    <span className="entry-input-shell">
+                      <KeyRound size={22} aria-hidden="true" />
+                      <input
+                        ref={passwordInput}
+                        className="entry-input"
+                        type="password"
+                        name="password"
+                        aria-label="Password"
+                        aria-invalid={invalidField === 'password'}
+                        aria-describedby={describedBy('password', 'entry-password-hint')}
+                        value={password}
+                        // Shared kiosk: never autofill another attendee's saved password.
+                        autoComplete="new-password"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        maxLength={PLAYER_PASSWORD_MAX_LENGTH * 2}
+                        disabled={controlsDisabled}
+                        onChange={event => {
+                          setPassword(event.target.value)
+                          setError(null)
+                          setInvalidField(null)
+                        }}
+                      />
+                    </span>
+                  </label>
+                  {mode === 'new' && (
+                    <label className="entry-field">
+                      <span
+                        className="entry-control-label"
+                        data-current={detailsReady && Boolean(password) && !confirmPassword}
+                      >
+                        <b>03</b> Confirm your password
+                      </span>
+                      <span className="entry-input-shell">
+                        <KeyRound size={22} aria-hidden="true" />
+                        <input
+                          ref={confirmInput}
+                          className="entry-input"
+                          type="password"
+                          name="confirmPassword"
+                          aria-label="Confirm password"
+                          aria-invalid={invalidField === 'confirm'}
+                          aria-describedby={describedBy('confirm')}
+                          value={confirmPassword}
+                          autoComplete="new-password"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          maxLength={PLAYER_PASSWORD_MAX_LENGTH * 2}
+                          disabled={controlsDisabled}
+                          onChange={event => {
+                            setConfirmPassword(event.target.value)
+                            setError(null)
+                            setInvalidField(null)
+                          }}
+                        />
+                      </span>
+                    </label>
+                  )}
+                  <p className="entry-hint" id="entry-password-hint">
+                    {mode === 'new'
+                      ? `Use ${PLAYER_PASSWORD_MIN_LENGTH} to ${PLAYER_PASSWORD_MAX_LENGTH} characters. Don't reuse a password from another account.`
+                      : 'Use the password you chose when you started your adventure.'}
+                  </p>
                 </div>
               )}
               <div className="entry-final-action">
@@ -440,9 +383,9 @@ export default function SignInPage() {
                   <p className="entry-feedback" role="alert" id="entry-feedback">
                     {displayedError}
                   </p>
-                ) : !issued && (isSubmitting || celebrating) ? (
+                ) : !issued && isSubmitting ? (
                   <p className="entry-feedback" role="status">
-                    {mode === 'new' ? 'Forging your adventurer...' : 'Checking your spell...'}
+                    {mode === 'new' ? 'Creating your adventurer...' : 'Checking your password...'}
                   </p>
                 ) : null}
                 {issued ? (
@@ -454,35 +397,17 @@ export default function SignInPage() {
                   >
                     Begin trivia <ArrowRight size={18} />
                   </button>
-                ) : canRetry ? (
-                  <button
-                    type="submit"
-                    className="play-go entry-create"
-                    disabled={isSubmitting || isLockdownActive}
-                  >
-                    {mode === 'new' ? 'Retry summoning my adventurer' : 'Retry verification'}
+                ) : (
+                  <button type="submit" className="play-go entry-create" disabled={!canSubmit}>
+                    {mode === 'returning'
+                      ? 'Continue adventure'
+                      : creationFrozen && error
+                        ? 'Retry creating my adventurer'
+                        : 'Create my adventurer'}
                     <ArrowRight size={18} />
                   </button>
-                ) : null}
+                )}
               </div>
-              {!issued && celebrating && !displayedError && (
-                <div className="spell-finale" aria-hidden="true">
-                  <span className="spell-wave" />
-                  {Array.from({ length: 16 }, (_, index) => (
-                    <span
-                      className="spell-ray"
-                      key={index}
-                      style={{ transform: `rotate(${index * 22.5}deg)` }}
-                    >
-                      <Star
-                        size={18}
-                        fill="currentColor"
-                        style={{ animationDelay: `${(index % 4) * 0.045}s` }}
-                      />
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           </form>
         </main>
@@ -496,7 +421,7 @@ export default function SignInPage() {
         </p>
         <p>
           Review the{' '}
-          <a href="http://aka.ms/igniteRTI-racingrules" target="_blank" rel="noopener noreferrer">
+          <a href="https://aka.ms/trivia-rules" target="_blank" rel="noopener noreferrer">
             Terms and Conditions
           </a>{' '}
           before you begin your challenge run.

@@ -256,6 +256,15 @@ export default function ResultsPage() {
   const handlePlayAgain = useCallback(() => {
     if (!savedSummary) return
     resetGame()
+    setSelectedPool(null)
+    analytics.setSession(null)
+    analytics.setPool(null)
+    navigate('/select-pool', { replace: true })
+  }, [navigate, resetGame, savedSummary, setSelectedPool])
+
+  const handleReset = useCallback(() => {
+    if (!savedSummary) return
+    resetGame()
     setPlayer(null)
     setSelectedPool(null)
     analytics.identify(null)
@@ -356,15 +365,25 @@ export default function ResultsPage() {
                   </div>
                 </div>
 
-                <div className="mt-8 flex items-center justify-center">
+                <div className="mt-8 flex w-full max-w-xl flex-col items-stretch justify-center gap-3 sm:flex-row">
                   <button
                     type="button"
                     onClick={handlePlayAgain}
-                    className="w-full max-w-xs rounded-2xl bg-linear-to-r from-amber-400 via-amber-300 to-amber-500 px-4 py-3.5 text-lg font-semibold text-[#2b1800] shadow-[0_18px_42px_rgba(251,191,36,0.45)] transition hover:brightness-[1.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200"
+                    className="flex-1 rounded-2xl bg-linear-to-r from-amber-400 via-amber-300 to-amber-500 px-4 py-3.5 text-lg font-semibold text-[#2b1800] shadow-[0_18px_42px_rgba(251,191,36,0.45)] transition hover:brightness-[1.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200"
                   >
                     Play Again
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="flex-1 rounded-2xl border border-amber-200/50 bg-white/5 px-4 py-3.5 text-lg font-semibold text-amber-100 transition hover:border-amber-200 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200"
+                  >
+                    Reset
+                  </button>
                 </div>
+                <p className="mt-4 max-w-xl text-sm text-white/65">
+                  Please allow others to play next (click Reset) if there is a line behind you.
+                </p>
               </div>
             </div>
           </section>

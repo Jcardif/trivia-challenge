@@ -2,7 +2,14 @@ import type { CreatePoolInput, EndSessionRequest, RegisterUserRequest, SubmitAns
 import { DomainError } from './errors.js'
 import { isCountry, normalizeCountry } from './countries.js'
 import { GAME_RULE_DEFAULTS } from './gameRules.js'
-import { isPlayerCode, isRuneSpell, normalizePlayerCode, RUNE_CATALOG_VERSION } from './playerIdentity.js'
+import {
+  isGeneratedPlayerName,
+  isPlayerPassword,
+  normalizePlayerName,
+  PLAYER_NAME_MAX_LENGTH,
+  PLAYER_PASSWORD_MAX_LENGTH,
+  PLAYER_PASSWORD_MIN_LENGTH,
+} from './playerIdentity.js'
 
 export const TEXT_LIMIT = 4000
 export const SLUG_LIMIT = 400
@@ -70,22 +77,23 @@ export function boolean(value: unknown, field: string): boolean {
 export function registrationInput(value: unknown): RegisterUserRequest {
   const input = record(value)
   const allowed = input.mode === 'new'
-    ? ['mode', 'requestId', 'country', 'runeVersion', 'runes']
-    : ['mode', 'playerCode', 'runeVersion', 'runes']
+    ? ['mode', 'requestId', 'country', 'password']
+    : ['mode', 'name', 'password']
   if (Object.keys(input).some(key => !allowed.includes(key))) {
-    return invalid('Player entry accepts only the country for a new adventurer, a code or request ID, and an item-rune spell.')
+    return invalid('Player entry accepts only a country and password for a new adventurer, or an adventurer name and password.')
   }
-  if (input.runeVersion !== RUNE_CATALOG_VERSION) return invalid('This spell catalog is not supported. Reload the entry page.')
-  if (!isRuneSpell(input.runes)) return invalid('Choose three different item runes in order.')
-  const spell = { runeVersion: RUNE_CATALOG_VERSION, runes: input.runes } as const
+  if (!isPlayerPassword(input.password)) {
+    return invalid(`Use a password of ${PLAYER_PASSWORD_MIN_LENGTH} to ${PLAYER_PASSWORD_MAX_LENGTH} characters.`)
+  }
+  const password = input.password
   if (input.mode === 'new') {
     if (!isCountry(input.country)) return invalid('Choose a country or region from the list.')
-    return { ...spell, mode: 'new', requestId: uuid(input.requestId, 'requestId'), country: normalizeCountry(input.country) }
+    return { mode: 'new', requestId: uuid(input.requestId, 'requestId'), country: normalizeCountry(input.country), password }
   }
   if (input.mode !== 'returning') return invalid('Choose new or returning adventurer.')
-  const playerCode = normalizePlayerCode(text(input.playerCode, 'Adventurer code', 12))
-  if (!isPlayerCode(playerCode)) return invalid('Enter one code letter followed by three digits, such as K482.')
-  return { ...spell, mode: 'returning', playerCode }
+  const name = normalizePlayerName(text(input.name, 'Adventurer name', PLAYER_NAME_MAX_LENGTH * 2))
+  if (!isGeneratedPlayerName(name)) return invalid('Enter the adventurer name you were given, such as Amber Query Crafter.')
+  return { mode: 'returning', name, password }
 }
 
 export function poolInput(value: unknown): Required<Omit<CreatePoolInput, 'description'>> & { description?: string } {
