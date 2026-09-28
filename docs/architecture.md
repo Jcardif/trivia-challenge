@@ -72,7 +72,7 @@ The secret-code input is a plain text field layered under the slots. It has `aut
 
 After creation succeeds, the reveal screen shows the generated name and code on a ticket and asks the attendee to photograph it, then **Begin trivia** continues. A failed creation locks its request ID and country, and offers a retry of the same request. The privacy footer shows the Terms and Conditions QR asset at `public/terms-qr.png`.
 
-Station avatars are mirrored so they face into the page. Entry styles stay scoped to the page; other routes retain their own scrolling and station-avatar behavior.
+Station avatars face into the page: the entry avatar on the left is mirrored, and the bottom-right avatar on other routes keeps the image's original orientation. Entry styles stay scoped to the page; other routes retain their own scrolling and station-avatar behavior.
 
 ### Results actions
 

@@ -44,7 +44,7 @@ export function StationAvatar({ placement = 'fixed' }: { placement?: 'fixed' | '
         alt=""
         aria-hidden="true"
         draggable={false}
-        className="max-h-[55vh] w-auto -scale-x-100 select-none"
+        className="max-h-[55vh] w-auto select-none"
       />
     </div>
   )
