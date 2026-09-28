@@ -206,7 +206,7 @@ describe('ported attendee flow', () => {
     expectNoOperatorTools()
     expect(invoke.mock.calls.filter(([name]) => name === 'endSession')).toHaveLength(1)
     expect(screen.getAllByTestId('qr-code').map(code => code.getAttribute('data-value'))).toEqual([
-      'https://aka.ms/fabrictrivia/l', 'https://aka.ms/fabrictrivia/f', 'https://aka.ms/fabrictrivia/c',
+      'https://aka.ms/fabrictrivia/l', 'https://aka.ms/fabrictrivia/f',
     ])
     fireEvent.click(playAgain)
     const beginAgain = await screen.findByRole('button', { name: 'Begin Your Quest' })

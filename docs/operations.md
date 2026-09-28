@@ -180,6 +180,5 @@ The results screen links to the existing public resources:
 | --------------- | ----------------------------- |
 | Leaderboard     | https://aka.ms/fabrictrivia/l |
 | Fabric learning | https://aka.ms/fabrictrivia/f |
-| Certification   | https://aka.ms/fabrictrivia/c |
 
 The repository does not contain the leaderboard report. These links are defined in `src/pages/ResultsPage.tsx`; deploying another instance does not connect that report to the new instance's data.

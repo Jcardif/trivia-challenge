@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import { useGame } from '../context/GameContext'
@@ -59,12 +59,6 @@ const QR_LINKS = [
     href: 'https://aka.ms/fabrictrivia/f',
     description: 'Discover tutorials, case studies, and product highlights.',
   },
-  {
-    id: 'get-certified',
-    title: 'Get Certified',
-    href: 'https://aka.ms/fabrictrivia/c',
-    description: 'Take the next step with Fabric certifications and training.',
-  },
 ] as const
 
 export default function ResultsPage() {
@@ -88,8 +82,6 @@ export default function ResultsPage() {
     savedSummary,
     retrySave,
   } = useGame()
-
-  const [analyticsEventCount] = useState(() => analytics.getTrackedEventCount())
 
   useEffect(() => {
     if (!player) {
@@ -171,35 +163,6 @@ export default function ResultsPage() {
       },
     ]
   }, [answered, baseTime, bonusSecondsEarned, completedStreaksDisplay, timeSpent, totalTimeBudget])
-
-  const sessionStats = useMemo<StatDescriptor[]>(
-    () => {
-      const startedAt = session ? new Date(session.startTime) : null
-      return [
-        {
-          label: 'Session ID',
-          value: session?.sessionId ?? 'Unavailable',
-          helper: 'Share this code with the Fabric team if you need support',
-        },
-        {
-          label: 'Start Time',
-          value: startedAt ? startedAt.toLocaleString() : '—',
-          helper: 'Local time when your run began',
-        },
-        {
-          label: 'Question Seed',
-          value: session ? String(session.seed) : '—',
-          helper: 'Ensures identical question order for analytics',
-        },
-        {
-          label: 'Telemetry Events',
-          value: analyticsEventCount.toString(),
-          helper: 'Total analytics events emitted during this run',
-        },
-      ]
-    },
-    [session, analyticsEventCount]
-  )
 
   const playerName = (player?.name ?? '').trim()
   const playerDisplayName = playerName || player?.name || 'Player'
@@ -394,7 +357,7 @@ export default function ResultsPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/60">Keep Exploring</p>
                 <p className="mt-2 text-sm text-white/45">Scan a code to keep your Fabric journey going after the challenge.</p>
               </header>
-              <div className="grid gap-6 px-7 py-8 md:grid-cols-3">
+              <div className="grid gap-6 px-7 py-8 md:grid-cols-2">
                 {QR_LINKS.map((link) => (
                     <div
                     key={link.id}
@@ -463,15 +426,6 @@ export default function ResultsPage() {
                 </div>
               )}
             </div>
-          </section>
-
-          
-          <section className="mt-12">
-            <StatGroup
-              title="Session Details"
-              caption="Keep these handy for support or bragging rights"
-              stats={sessionStats}
-            />
           </section>
         </main>
       </div>
