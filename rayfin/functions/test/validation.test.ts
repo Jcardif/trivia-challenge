@@ -7,15 +7,15 @@ const questionId = '22222222-2222-4222-8222-222222222222'
 const answer = { sessionId, questionId, answerIndex: 0, timeElapsed: 0.123456789, isCorrect: false }
 
 describe('operation validation', () => {
-  it('normalizes returning names without accepting contact details or changing the password', () => {
+  it('normalizes secret codes without accepting contact details or legacy credentials', () => {
     expect(registrationInput({
-      mode: 'returning', name: '  amber  query crafter 2 ', password: ' Otter 42 ',
+      mode: 'returning', secretCode: ' o-il10 ',
     })).toEqual({
-      mode: 'returning', name: 'Amber Query Crafter 2', password: ' Otter 42 ',
+      mode: 'returning', secretCode: '01110',
     })
     expect(registrationInput({
-      mode: 'new', requestId: sessionId.toUpperCase(), country: 'Canada', password: 'otter-42',
-    })).toEqual({ mode: 'new', requestId: sessionId, country: 'Canada', password: 'otter-42' })
+      mode: 'new', requestId: sessionId.toUpperCase(), country: 'Canada',
+    })).toEqual({ mode: 'new', requestId: sessionId, country: 'Canada' })
     expect(() => registrationInput({ email: 'test@example.invalid', name: 'Amber Query Crafter' })).toThrow(DomainError)
   })
 
@@ -23,17 +23,17 @@ describe('operation validation', () => {
     'rejects new-player countries outside the approved list: %j',
     country => {
       expect(() => registrationInput({
-        mode: 'new', requestId: sessionId, country, password: 'otter-42',
+        mode: 'new', requestId: sessionId, country,
       })).toThrow('Choose a country or region from the list.')
     }
   )
 
   it.each([
-    { password: undefined },
-    { password: 'abc' },
-    { password: '    ' },
-    { password: 'x'.repeat(65) },
-    { password: 1234 },
+    { secretCode: undefined },
+    { secretCode: 'ABCD' },
+    { secretCode: 'ABCDEF' },
+    { secretCode: 'ABCU1' },
+    { secretCode: 1234 },
     { mode: 'other' },
     { name: undefined },
     { name: 'Person' },
@@ -45,14 +45,14 @@ describe('operation validation', () => {
     { country: 'Country' },
   ])('rejects unsupported or private player input %o', overrides => {
     expect(() => registrationInput({
-      mode: 'returning', name: 'Amber Query Crafter', password: 'otter-42', ...overrides,
+      mode: 'returning', secretCode: 'ABCDE', ...overrides,
     })).toThrow(DomainError)
   })
 
-  it('rejects a new adventurer without a usable password', () => {
+  it('rejects extra fields on new adventurers', () => {
     expect(() => registrationInput({
       mode: 'new', requestId: sessionId, country: 'Canada', password: 'abc',
-    })).toThrow('Use a password of 4 to 64 characters.')
+    })).toThrow('Names, passwords, player codes, and runes are not accepted.')
   })
 
   it('preserves pool defaults and the slug-shaped contract', () => {

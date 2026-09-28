@@ -6,8 +6,10 @@ export interface User {
 }
 
 export type RegisterUserRequest =
-  | { mode: 'new'; requestId: string; country: string; password: string }
-  | { mode: 'returning'; name: string; password: string }
+  | { mode: 'new'; requestId: string; country: string }
+  | { mode: 'returning'; secretCode: string }
+
+export type RegisteredPlayer = User & { secretCode?: string }
 
 export type SessionStatus = 'active' | 'completed' | 'abandoned'
 
@@ -177,7 +179,7 @@ export type FunctionResult<T> =
   }
 
 export interface OperationMap {
-  registerPlayer: { input: RegisterUserRequest; output: User }
+  registerPlayer: { input: RegisterUserRequest; output: RegisteredPlayer }
   listPools: { input: Record<string, never>; output: QuestionPool[] }
   getPool: { input: { slug: string }; output: QuestionPool }
   createPool: { input: CreatePoolInput; output: QuestionPool }

@@ -12,7 +12,7 @@ Set up a supervised station, admit players, and recover interrupted requests wit
 
 The operator signs in once per browser session. Attendees use the adventurer entry screen and do not need Fabric accounts.
 
-Turn off password saving and autofill in the kiosk browser profile. Attendees type their own passwords at a shared station, and a saved password could be offered to a later attendee.
+Turn off password saving and autofill in the kiosk browser profile. Returning attendees type a secret code at a shared station, and saved form data could be offered to a later attendee.
 
 Each operator uses their own Fabric account with permission to run the same deployed app. The backend uses a separate application identity for SQL, so operators do not enter or share a database credential. All stations still use the same database and Eventstream. Assign each kiosk its own station ID for the shared scoreboard.
 
@@ -20,32 +20,30 @@ Each operator uses their own Fabric account with permission to run the same depl
 
 ### New players
 
-1. Select **Start a new adventure**.
-2. Under **Choose your country / region**, select the picker. Use **Find your country...** to search, then select a listed name with a click or the arrow keys and Enter.
-3. Under **Create a password**, enter 4 to 64 characters. Enter the same password under **Confirm your password**.
-4. Select **Create my adventurer**. The generated adventurer name replaces the form.
-5. Remember the name and password, then select **Begin trivia**.
+1. On the default entry screen, select **Choose your country / region**. Use **Find your country...** to search, then select a listed name with a click or the arrow keys and Enter.
+2. Select **Start a new challenge**. The generated adventurer name and secret code replace the form.
+3. Tell the attendee to photograph or screenshot the secret code. It will not be shown again.
+4. Select **Begin trivia**.
 
-Attendees choose their own passwords. Remind them not to reuse a password from another account. Passwords are never displayed or published.
+The secret code is the only thing a returning attendee needs. It is not displayed again, stored in browser storage, or published in telemetry. The Terms and Conditions QR image is loaded from `public/terms-qr.png` in the entry footer.
 
-If creation is interrupted, keep the tab open and select **Retry creating my adventurer**. The app keeps the request ID, country, and password so a lost response does not create another identity. **Start over with a new adventurer instead** abandons that local retry; it cannot recover the previous name.
+If creation is interrupted, keep the tab open and select **Retry**. The app keeps the request ID and country so a lost response does not create another identity. **Start a new challenge** abandons that local retry; it cannot recover the previous code.
 
 ### Returning players
 
-Returning entry is the initial view. From new-player entry, select **I already have an adventurer name**.
+From new-player entry, select **Have your secret code? Enter it here**.
 
-1. Under **Enter your adventurer name**, type the generated name, including any number suffix. Capitalization and extra spaces do not matter.
-2. Under **Enter your password**, type the password, then select **Continue adventure**.
+1. Under **Secret code**, type the code from the attendee's photo, then select **Continue**.
 
-A mismatch shows **Wrong name or password**, clears the password, and keeps the name. Connection or operator-session failures keep both; select **Continue adventure** again to retry.
+A mismatch clears the code and asks the attendee to check the photo or start a new challenge. Connection or operator-session failures keep the code; select **Continue** again to retry.
 
-After five failed verifications for a player, entry is blocked for the remainder of its 15-minute attempt window. A shared limit of 60 entry attempts per minute also applies across stations. Wait for the relevant window instead of retrying repeatedly.
+A shared limit of 60 entry attempts per minute applies across stations. Wrong codes do not identify a player, so there is no per-player lockout.
 
-Forgotten names and passwords cannot be recovered. **Start a new adventure** creates a different identity, so several identities can belong to one person. Adventurers created with a return code and rune spell cannot return either; ask them to start a new adventure.
+Forgotten codes cannot be recovered. **Forgot your code? Start a new challenge** creates a different identity, so several identities can belong to one person. Existing adventurers without a secret-code verifier cannot return either; ask them to start a new challenge.
 
 ### Names and countries
 
-Generated names are public aliases. A collision adds `2`, `3`, or the next sequence number; returning players must include it.
+Generated names are public aliases. A collision adds `2`, `3`, or the next sequence number. Returning players do not type the name; they use the secret code.
 
 The app saves the selected country or region with the player and includes it in gameplay analytics. It does not infer location from GPS, IP addresses, or browser settings. Returning players keep their saved country. The app has no real-name or contact fields.
 
@@ -119,7 +117,7 @@ These options are applied at build time. Station lockdown is a kiosk control, no
 
 Wait for the result to finish saving. The results screen offers two actions:
 
-- **Play Again** keeps the current adventurer and returns to pool selection, so they do not enter their name and password again.
+- **Play Again** keeps the current adventurer and returns to pool selection, so they do not enter their secret code again.
 - **Reset** clears the adventurer and game state and returns to an empty entry form for the next attendee.
 
 Both keep the operator session and station assignment. The results screen asks players to select **Reset** if there is a line behind them.
@@ -142,7 +140,7 @@ Test the largest planned question pool on the event devices and network. Each ga
 
 The app no longer requests attendee contact details, but generated identities, timestamps, and linked gameplay are pseudonymous data. Confirm the privacy notice, legal basis, access controls, retention/deletion policy, and public-display policy with the responsible privacy owner. Review platform access logs separately; the app cannot guarantee that hosting or identity infrastructure processes no personal data.
 
-Removing contact fields from the application does not erase information collected by older versions. Review historical SQL data, Eventhouse data, exports, and backups separately before sharing reports. Do not expose password verifiers or verification counters to Power BI.
+Removing contact fields from the application does not erase information collected by older versions. Review historical SQL data, Eventhouse data, exports, and backups separately before sharing reports. Do not expose secret-code or password verifiers to Power BI.
 
 ## Operator troubleshooting
 
@@ -155,7 +153,7 @@ Removing contact fields from the application does not erase information collecte
 | Operator authentication expires | Sign in again in the same tab, then retry the pending save. |
 | Sign-in works, but SQL operations fail on every station | Ask the deployment owner to check the backend application credential, its expiry, and SQL permissions. Signing an operator in again does not renew the application's client secret. Keep tabs with pending writes open. |
 | Fabric says the app is intended only for its builder because of SSO Functions | Ask the deployment owner to follow [Switch SQL authentication](deployment.md#switch-sql-authentication). Extra SQL permissions for the operator do not remove an app sign-in restriction. |
-| A name and password cannot be verified | Check the full name, including any number suffix, and the password. Wait after repeated failures; create a new adventurer if the credentials are forgotten. |
+| A secret code cannot be verified | Check the attendee's photo and retype the code. Create a new adventurer if the code is lost. |
 | Creation failed after submitting | Retry the same creation request in the open tab to recover an already-created identity. |
 | Telemetry is queued or dropped | After the current game is saved, open `/operator` to inspect delivery status and follow the [telemetry guide](telemetry-events.md). |
 
@@ -174,11 +172,12 @@ The **Existing icon path** field accepts an asset path. These pool icons are inc
 
 ## External links
 
-The results screen links to the existing public resources:
+The results screen shows QR codes for the existing public resources:
 
-| Destination     | URL                           |
-| --------------- | ----------------------------- |
-| Leaderboard     | https://aka.ms/fabrictrivia/l |
-| Fabric learning | https://aka.ms/fabrictrivia/f |
+| Destination           | URL                           |
+| --------------------- | ----------------------------- |
+| Leaderboard           | https://aka.ms/fabrictrivia/l |
+| Fabric learning       | https://aka.ms/fabrictrivia/f |
+| Fabric certifications | https://aka.ms/eu/cert        |
 
 The repository does not contain the leaderboard report. These links are defined in `src/pages/ResultsPage.tsx`; deploying another instance does not connect that report to the new instance's data.

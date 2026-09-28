@@ -1,15 +1,20 @@
-import { randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto'
-import { PLAYER_NAME_PREFIXES, PLAYER_NAME_TITLES } from './playerIdentity.js'
+import { randomInt, scrypt } from 'node:crypto'
+import {
+  normalizePlayerCode,
+  PLAYER_CODE_ALPHABET,
+  PLAYER_CODE_LENGTH,
+  PLAYER_NAME_PREFIXES,
+  PLAYER_NAME_TITLES,
+} from './playerIdentity.js'
 
-const HASH_PREFIX = 'scrypt-v1'
-const HASH_PATTERN = /^scrypt-v1:([a-f0-9]{32}):([a-f0-9]{64})$/
-export const UNKNOWN_PLAYER_HASH = `${HASH_PREFIX}:${'0'.repeat(32)}:${'0'.repeat(64)}`
+const SECRET_CODE_SALT = 'fabric-trivia-secret-code-v1'
+const CODE_HASH_PATTERN = /^[a-f0-9]{64}$/
 
-function derivePassword(password: string, salt: Buffer): Promise<Buffer> {
+function deriveSecretCodeHash(secretCode: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     scrypt(
-      password.normalize('NFC'),
-      salt,
+      secretCode,
+      SECRET_CODE_SALT,
       32,
       { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 },
       (error, key) => {
@@ -20,17 +25,22 @@ function derivePassword(password: string, salt: Buffer): Promise<Buffer> {
   })
 }
 
-export async function hashPlayerPassword(password: string): Promise<string> {
-  const salt = randomBytes(16)
-  const hash = await derivePassword(password, salt)
-  return `${HASH_PREFIX}:${salt.toString('hex')}:${hash.toString('hex')}`
+export function generatePlayerCode(): string {
+  let code = ''
+  for (let index = 0; index < PLAYER_CODE_LENGTH; index += 1) {
+    code += PLAYER_CODE_ALPHABET[randomInt(PLAYER_CODE_ALPHABET.length)]
+  }
+  return code
 }
 
-export async function verifyPlayerPassword(password: string, stored: string): Promise<boolean> {
-  const match = HASH_PATTERN.exec(stored)
-  if (!match) throw new Error('Stored password verifier is invalid.')
-  const hash = await derivePassword(password, Buffer.from(match[1], 'hex'))
-  return timingSafeEqual(hash, Buffer.from(match[2], 'hex'))
+export async function hashPlayerCode(secretCode: string): Promise<string> {
+  const normalized = normalizePlayerCode(secretCode)
+  if (!new RegExp(`^[${PLAYER_CODE_ALPHABET}]{${PLAYER_CODE_LENGTH}}$`).test(normalized)) {
+    throw new Error('Player secret code is invalid.')
+  }
+  const hash = (await deriveSecretCodeHash(normalized)).toString('hex')
+  if (!CODE_HASH_PATTERN.test(hash)) throw new Error('Player secret code hash is invalid.')
+  return hash
 }
 
 export function generatePlayerName(): string {

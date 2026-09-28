@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, Check, KeyRound, MapPin, UserRound } from 'lucide-react'
+import { ArrowRight, Camera, Check, KeyRound, MapPin } from 'lucide-react'
 import EntryCountryPicker from '../components/EntryCountryPicker'
 import StationAvatar from '../components/StationAvatar'
 import { useGame } from '../context/GameContext'
@@ -9,21 +9,19 @@ import { OperationError } from '../services/operationError'
 import { analytics } from '../services/analyticsService'
 import { isCountry } from '../../rayfin/functions/src/countries'
 import { getStationLockdownMessage, isStationLockdownActive } from '../lib/stationLockdown'
-import {
-  isGeneratedPlayerName,
-  isPlayerPassword,
-  normalizePlayerName,
-  PLAYER_NAME_MAX_LENGTH,
-  PLAYER_PASSWORD_MAX_LENGTH,
-  PLAYER_PASSWORD_MIN_LENGTH,
-} from '../../rayfin/functions/src/playerIdentity'
-import type { RegisterUserRequest, User } from '../types/api'
+import { isPlayerCode, normalizePlayerCode } from '../../rayfin/functions/src/playerIdentity'
+import type { RegisteredPlayer, RegisterUserRequest, User } from '../types/api'
 import './SignInPage.css'
 
-type InvalidField = 'name' | 'password' | 'confirm' | null
+type InvalidField = 'code' | null
 
-const PASSWORD_RULE = `Use a password of ${PLAYER_PASSWORD_MIN_LENGTH} to ${PLAYER_PASSWORD_MAX_LENGTH} characters.`
-const NAME_RULE = 'Enter the adventurer name you were given, such as Amber Query Crafter.'
+const CODE_RULE = 'Enter your 5-character secret code.'
+
+function withoutSecretCode(player: RegisteredPlayer): User {
+  const user = { ...player }
+  delete user.secretCode
+  return user
+}
 
 export default function SignInPage() {
   const navigate = useNavigate()
@@ -32,16 +30,13 @@ export default function SignInPage() {
   const mountedRef = useRef(false)
   const submittingRef = useRef(false)
   const nameHeading = useRef<HTMLHeadingElement>(null)
-  const nameInput = useRef<HTMLInputElement>(null)
-  const passwordInput = useRef<HTMLInputElement>(null)
-  const confirmInput = useRef<HTMLInputElement>(null)
-  const [mode, setMode] = useState<'new' | 'returning'>('returning')
-  const [name, setName] = useState('')
+  const codeInput = useRef<HTMLInputElement>(null)
+  const [mode, setMode] = useState<'new' | 'returning'>('new')
   const [country, setCountry] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
+  const [secretCode, setSecretCode] = useState('')
   const [pendingCreation, setPendingCreation] = useState<RegisterUserRequest | null>(null)
   const [registered, setRegistered] = useState<User | null>(null)
+  const [issuedCode, setIssuedCode] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [invalidField, setInvalidField] = useState<InvalidField>(null)
@@ -50,11 +45,8 @@ export default function SignInPage() {
   const creationFrozen = pendingCreation !== null
   const issued = registered !== null
   const controlsDisabled = isSubmitting || creationFrozen || issued || isLockdownActive
-  const detailsReady = mode === 'new' ? isCountry(country) : name.trim().length > 0
-  const secretReady =
-    mode === 'new' ? password.length > 0 && confirmPassword.length > 0 : password.length > 0
-  const canSubmit =
-    !isSubmitting && !isLockdownActive && (creationFrozen || (detailsReady && secretReady))
+  const detailsReady = mode === 'new' ? isCountry(country) : secretCode.trim().length > 0
+  const canSubmit = !isSubmitting && !isLockdownActive && (creationFrozen || detailsReady)
 
   useEffect(() => {
     mountedRef.current = true
@@ -69,18 +61,15 @@ export default function SignInPage() {
     if (issued) nameHeading.current?.focus({ preventScroll: true })
   }, [issued])
   useEffect(() => {
-    if (isSubmitting || !invalidField) return
-    const inputs = { name: nameInput, password: passwordInput, confirm: confirmInput }
-    inputs[invalidField].current?.focus({ preventScroll: true })
+    if (isSubmitting || invalidField !== 'code') return
+    codeInput.current?.focus({ preventScroll: true })
   }, [invalidField, isSubmitting])
 
   const startEntry = (nextMode: 'new' | 'returning') => {
     if (submittingRef.current || registered) return
     setMode(nextMode)
-    setName('')
     setCountry('')
-    setPassword('')
-    setConfirmPassword('')
+    setSecretCode('')
     setPendingCreation(null)
     setError(null)
     setInvalidField(null)
@@ -114,47 +103,54 @@ export default function SignInPage() {
       if (pendingCreation) request = pendingCreation
       else {
         if (!isCountry(country)) return reject(null, 'Choose a country or region from the list.')
-        if (!isPlayerPassword(password)) return reject('password', PASSWORD_RULE)
-        if (password !== confirmPassword) return reject('confirm', "Those passwords don't match.")
-        request = { mode: 'new', requestId: crypto.randomUUID(), country, password }
+        request = { mode: 'new', requestId: crypto.randomUUID(), country }
         setPendingCreation(request)
       }
     } else {
-      const normalizedName = normalizePlayerName(name)
-      if (!isGeneratedPlayerName(normalizedName)) return reject('name', NAME_RULE)
-      if (!isPlayerPassword(password)) return reject('password', PASSWORD_RULE)
-      setName(normalizedName)
-      request = { mode: 'returning', name: normalizedName, password }
+      const normalizedCode = normalizePlayerCode(secretCode)
+      if (!isPlayerCode(normalizedCode)) return reject('code', CODE_RULE)
+      request = { mode: 'returning', secretCode: normalizedCode }
     }
     setError(null)
     setInvalidField(null)
     setIsSubmitting(true)
     submittingRef.current = true
     try {
-      const user = await userService.register(request)
+      const player = await userService.register(request)
       if (!mountedRef.current || !isCurrentGame(generation)) return
+      const user = withoutSecretCode(player)
       if (mode === 'new') {
+        if (!player.secretCode) {
+          setPendingCreation(null)
+          setCountry('')
+          throw new Error('Secret code was not returned. Start a new challenge.')
+        }
         setRegistered(user)
+        setIssuedCode(player.secretCode)
         setPendingCreation(null)
-        setPassword('')
-        setConfirmPassword('')
-      } else enterChallenge(user)
+      } else {
+        setSecretCode('')
+        enterChallenge(user)
+      }
     } catch (failure) {
       if (!mountedRef.current || !isCurrentGame(generation)) return
-      const wrongCredentials =
-        mode === 'returning' &&
-        failure instanceof OperationError &&
-        failure.code === 'PLAYER_VERIFICATION_FAILED'
+      const operationError = failure instanceof OperationError ? failure : null
+      const wrongCode =
+        mode === 'returning' && operationError?.code === 'PLAYER_VERIFICATION_FAILED'
+      if (mode === 'new' && operationError?.code === 'PLAYER_ALREADY_CREATED') {
+        setPendingCreation(null)
+        setCountry('')
+      }
       setError(
-        wrongCredentials
-          ? 'Wrong name or password. Try again, or wait 15 minutes.'
+        wrongCode
+          ? "That secret code didn't match an adventurer. Check your photo and try again, or start a new challenge."
           : failure instanceof Error
             ? failure.message
             : 'Player entry failed. Please try again.'
       )
-      if (wrongCredentials) {
-        setPassword('')
-        setInvalidField('password')
+      if (wrongCode) {
+        setSecretCode('')
+        setInvalidField('code')
       }
     } finally {
       submittingRef.current = false
@@ -197,12 +193,12 @@ export default function SignInPage() {
                     {issued
                       ? 'YOUR ADVENTURER'
                       : mode === 'returning'
-                        ? 'YOUR ADVENTURE'
+                        ? 'RETURNING ADVENTURER'
                         : 'NEW ADVENTURER'}
                   </span>
                   <h1>
-                    {issued ? "You're in" : mode === 'returning' ? 'Continue' : 'Begin'}
-                    <em>{issued ? 'adventurer' : 'your quest'}</em>
+                    {issued ? "You're in," : mode === 'returning' ? 'Welcome' : 'Start a new'}
+                    <em>{issued ? 'adventurer' : mode === 'returning' ? 'back' : 'challenge'}</em>
                   </h1>
                 </div>
               </div>
@@ -217,11 +213,11 @@ export default function SignInPage() {
                       type="button"
                       className="entry-mode-link"
                       disabled={controlsDisabled}
-                      onClick={() => startEntry(mode === 'returning' ? 'new' : 'returning')}
+                      onClick={() => startEntry(mode === 'new' ? 'returning' : 'new')}
                     >
-                      {mode === 'returning'
-                        ? "Start a new adventure if you're new or forgot your name or password."
-                        : 'I already have an adventurer name'}
+                      {mode === 'new'
+                        ? 'Have your secret code? Enter it here'
+                        : 'Forgot your code? Start a new challenge'}
                       <ArrowRight size={17} aria-hidden="true" />
                     </button>
                     {creationFrozen && !isSubmitting && (
@@ -230,7 +226,7 @@ export default function SignInPage() {
                         className="entry-mode-link"
                         onClick={() => startEntry('new')}
                       >
-                        Start over with a new adventurer instead
+                        Start a new challenge
                       </button>
                     )}
                   </div>
@@ -240,31 +236,52 @@ export default function SignInPage() {
             <div className="entry-lock" data-entry-error={displayedError || undefined}>
               <h2 className="entry-secret-heading">
                 {issued
-                  ? 'Remember your name and password to return.'
+                  ? "Take a photo now. Your secret code won't be shown again."
                   : mode === 'returning'
-                    ? 'Welcome back. Enter the adventurer name you were given and your password.'
-                    : 'Choose your country or region and a password. Your adventurer name appears next.'}
+                    ? 'Enter the secret code from your photo.'
+                    : "Choose your country or region. We'll give you an adventurer name and a secret code."}
               </h2>
               {issued ? (
                 <section className="entry-name-reveal" aria-label="Your adventurer is ready">
                   <div className="entry-issued-name">
-                    <h2
-                      ref={nameHeading}
-                      tabIndex={-1}
-                      className="entry-control-label"
-                      aria-describedby="entry-issued-value entry-name-reminder"
-                    >
-                      <b>
-                        <Check size={15} aria-hidden="true" />
-                      </b>
-                      Remember your adventurer name
-                    </h2>
-                    <output id="entry-issued-value" aria-label="Adventurer name">
-                      {registered.name}
-                    </output>
-                    <p id="entry-name-reminder">
-                      To return, enter this name and the password you just chose.
-                    </p>
+                    <div className="entry-issued-block">
+                      <h2
+                        ref={nameHeading}
+                        tabIndex={-1}
+                        className="entry-control-label"
+                        aria-describedby="entry-issued-value"
+                      >
+                        <b>
+                          <Check size={15} aria-hidden="true" />
+                        </b>
+                        Your adventurer name
+                      </h2>
+                      <output id="entry-issued-value" aria-label="Adventurer name">
+                        {registered.name}
+                      </output>
+                    </div>
+                    <div className="entry-issued-block entry-code-block">
+                      <h2 className="entry-control-label" aria-describedby="entry-issued-code">
+                        <b>
+                          <KeyRound size={15} aria-hidden="true" />
+                        </b>
+                        Your secret code
+                      </h2>
+                      <output
+                        id="entry-issued-code"
+                        className="entry-issued-code"
+                        aria-label="Secret code"
+                      >
+                        {issuedCode}
+                      </output>
+                    </div>
+                    <div className="entry-code-callout" role="note">
+                      <Camera size={22} aria-hidden="true" />
+                      <p>
+                        Take a photo of your secret code now. It won't be shown again, and it's all
+                        you need to come back.
+                      </p>
+                    </div>
                   </div>
                 </section>
               ) : (
@@ -272,27 +289,27 @@ export default function SignInPage() {
                   {mode === 'returning' ? (
                     <label className="entry-field">
                       <span className="entry-control-label" data-current={!detailsReady}>
-                        <b>01</b> Enter your adventurer name
+                        <b>01</b> Secret code
                       </span>
                       <span className="entry-input-shell">
-                        <UserRound size={22} aria-hidden="true" />
+                        <KeyRound size={22} aria-hidden="true" />
                         <input
-                          ref={nameInput}
+                          ref={codeInput}
                           className="entry-input"
-                          type="text"
-                          name="adventurerName"
-                          aria-label="Adventurer name"
-                          aria-invalid={invalidField === 'name'}
-                          aria-describedby={describedBy('name')}
-                          value={name}
-                          placeholder="e.g. Amber Query Crafter"
-                          autoComplete="off"
-                          autoCapitalize="words"
+                          type="password"
+                          name="secretCode"
+                          aria-label="Secret code"
+                          aria-invalid={invalidField === 'code'}
+                          aria-describedby={describedBy('code', 'entry-code-hint')}
+                          value={secretCode}
+                          // Shared kiosk: never autofill another attendee's saved code.
+                          autoComplete="new-password"
+                          autoCapitalize="characters"
                           spellCheck={false}
-                          maxLength={PLAYER_NAME_MAX_LENGTH}
+                          maxLength={12}
                           disabled={controlsDisabled}
                           onChange={event => {
-                            setName(event.target.value)
+                            setSecretCode(event.target.value)
                             setError(null)
                             setInvalidField(null)
                           }}
@@ -309,73 +326,11 @@ export default function SignInPage() {
                       }}
                     />
                   )}
-                  <label className="entry-field">
-                    <span className="entry-control-label" data-current={detailsReady && !password}>
-                      <b>02</b> {mode === 'new' ? 'Create a password' : 'Enter your password'}
-                    </span>
-                    <span className="entry-input-shell">
-                      <KeyRound size={22} aria-hidden="true" />
-                      <input
-                        ref={passwordInput}
-                        className="entry-input"
-                        type="password"
-                        name="password"
-                        aria-label="Password"
-                        aria-invalid={invalidField === 'password'}
-                        aria-describedby={describedBy('password', 'entry-password-hint')}
-                        value={password}
-                        // Shared kiosk: never autofill another attendee's saved password.
-                        autoComplete="new-password"
-                        autoCapitalize="off"
-                        spellCheck={false}
-                        maxLength={PLAYER_PASSWORD_MAX_LENGTH * 2}
-                        disabled={controlsDisabled}
-                        onChange={event => {
-                          setPassword(event.target.value)
-                          setError(null)
-                          setInvalidField(null)
-                        }}
-                      />
-                    </span>
-                  </label>
-                  {mode === 'new' && (
-                    <label className="entry-field">
-                      <span
-                        className="entry-control-label"
-                        data-current={detailsReady && Boolean(password) && !confirmPassword}
-                      >
-                        <b>03</b> Confirm your password
-                      </span>
-                      <span className="entry-input-shell">
-                        <KeyRound size={22} aria-hidden="true" />
-                        <input
-                          ref={confirmInput}
-                          className="entry-input"
-                          type="password"
-                          name="confirmPassword"
-                          aria-label="Confirm password"
-                          aria-invalid={invalidField === 'confirm'}
-                          aria-describedby={describedBy('confirm')}
-                          value={confirmPassword}
-                          autoComplete="new-password"
-                          autoCapitalize="off"
-                          spellCheck={false}
-                          maxLength={PLAYER_PASSWORD_MAX_LENGTH * 2}
-                          disabled={controlsDisabled}
-                          onChange={event => {
-                            setConfirmPassword(event.target.value)
-                            setError(null)
-                            setInvalidField(null)
-                          }}
-                        />
-                      </span>
-                    </label>
+                  {mode === 'returning' && (
+                    <p className="entry-hint" id="entry-code-hint">
+                      5 letters and numbers. Capitals don't matter.
+                    </p>
                   )}
-                  <p className="entry-hint" id="entry-password-hint">
-                    {mode === 'new'
-                      ? `Use ${PLAYER_PASSWORD_MIN_LENGTH} to ${PLAYER_PASSWORD_MAX_LENGTH} characters. Don't reuse a password from another account.`
-                      : 'Use the password you chose when you started your adventure.'}
-                  </p>
                 </div>
               )}
               <div className="entry-final-action">
@@ -385,7 +340,9 @@ export default function SignInPage() {
                   </p>
                 ) : !issued && isSubmitting ? (
                   <p className="entry-feedback" role="status">
-                    {mode === 'new' ? 'Creating your adventurer...' : 'Checking your password...'}
+                    {mode === 'new'
+                      ? 'Creating your adventurer...'
+                      : 'Checking your secret code...'}
                   </p>
                 ) : null}
                 {issued ? (
@@ -400,10 +357,10 @@ export default function SignInPage() {
                 ) : (
                   <button type="submit" className="play-go entry-create" disabled={!canSubmit}>
                     {mode === 'returning'
-                      ? 'Continue adventure'
+                      ? 'Continue'
                       : creationFrozen && error
-                        ? 'Retry creating my adventurer'
-                        : 'Create my adventurer'}
+                        ? 'Retry'
+                        : 'Start a new challenge'}
                     <ArrowRight size={18} />
                   </button>
                 )}
@@ -413,19 +370,23 @@ export default function SignInPage() {
         </main>
       </div>
       <footer className="privacy-notice entry-privacy" aria-label="Privacy notice">
-        <p>
-          Your privacy matters to us. We save your selected country or region with your adventurer
-          profile. When you start the Challenge, your country, gameplay and telemetry data feed the
-          Microsoft Fabric Real-Time Intelligence demo so attendees can see live analytics. That
-          telemetry may inform post-event learnings or future Microsoft marketing.
-        </p>
-        <p>
-          Review the{' '}
-          <a href="https://aka.ms/trivia-rules" target="_blank" rel="noopener noreferrer">
-            Terms and Conditions
-          </a>{' '}
-          before you begin your challenge run.
-        </p>
+        <div className="entry-privacy-copy">
+          <p>
+            Your privacy matters to us. We save your selected country or region with your adventurer
+            profile. When you start the Challenge, your country, gameplay and telemetry data feed
+            the Microsoft Fabric Real-Time Intelligence demo so attendees can see live analytics.
+            That telemetry may inform post-event learnings or future Microsoft marketing.
+          </p>
+          <p>
+            Scan the QR code to read the Terms and Conditions before you begin your challenge run.
+          </p>
+        </div>
+        <figure className="entry-terms-qr">
+          <span className="entry-terms-qr-tile">
+            <img src="/terms-qr.png" alt="QR code for the Terms and Conditions" />
+          </span>
+          <figcaption>Scan to read the Terms and Conditions</figcaption>
+        </figure>
       </footer>
     </div>
   )

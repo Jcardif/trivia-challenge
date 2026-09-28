@@ -2,16 +2,14 @@ import { describe, expect, it } from '@jest/globals'
 import { readFileSync } from 'node:fs'
 import {
   isGeneratedPlayerName,
-  isPlayerPassword,
-  normalizePlayerName,
+  isPlayerCode,
+  normalizePlayerCode,
+  PLAYER_CODE_ALPHABET,
+  PLAYER_CODE_LENGTH,
   PLAYER_NAME_PREFIXES,
   PLAYER_NAME_TITLES,
 } from '../src/playerIdentity.js'
-import {
-  generatePlayerName,
-  hashPlayerPassword,
-  verifyPlayerPassword,
-} from '../src/playerCredentials.js'
+import { generatePlayerCode, generatePlayerName, hashPlayerCode } from '../src/playerCredentials.js'
 
 describe('adventurer identity rules', () => {
   it('uses the editable TXT word banks in the compiled shared module', () => {
@@ -28,21 +26,29 @@ describe('adventurer identity rules', () => {
     expect(PLAYER_NAME_TITLES).toEqual(words.titles)
   })
 
-  it('accepts player-chosen passwords of 4 to 64 characters', () => {
-    for (const valid of ['abcd', '1234', 'two words', 'Ünïcödé', '🦦🦦🦦🦦', 'x'.repeat(64)]) {
-      expect(isPlayerPassword(valid)).toBe(true)
+  it('normalizes secret codes typed from photos', () => {
+    expect(normalizePlayerCode(' ab-cd1 ')).toBe('ABCD1')
+    expect(normalizePlayerCode('o0 il-l')).toBe('00111')
+    expect(normalizePlayerCode('a b-c d e')).toBe('ABCDE')
+  })
+
+  it('accepts exactly five Crockford base32 characters after normalization', () => {
+    for (const valid of ['01234', 'abcde', 'a-b c-d-e', 'O0IL1', 'vwxyz']) {
+      expect(isPlayerCode(valid)).toBe(true)
     }
-    for (const invalid of [undefined, null, 1234, '', 'abc', '    ', '🦦🦦🦦', 'x'.repeat(65)]) {
-      expect(isPlayerPassword(invalid)).toBe(false)
+    for (const invalid of [undefined, null, 1234, '', 'ABCD', 'ABCDEF', 'ABCU1', 'AB@12']) {
+      expect(isPlayerCode(invalid)).toBe(false)
     }
   })
 
-  it('restores the stored spelling of a typed name regardless of case and spacing', () => {
-    expect(normalizePlayerName('  amber   query crafter ')).toBe('Amber Query Crafter')
-    expect(normalizePlayerName('AMBER QUERY CRAFTER 12')).toBe('Amber Query Crafter 12')
-    expect(normalizePlayerName('Amber Query Crafter')).toBe('Amber Query Crafter')
-    expect(normalizePlayerName(' someone   else ')).toBe('someone else')
-    expect(isGeneratedPlayerName(normalizePlayerName('amber query crafter 02'))).toBe(false)
+  it('generates five-character secret codes using the approved alphabet', () => {
+    const alphabet = new Set(PLAYER_CODE_ALPHABET)
+    for (let i = 0; i < 100; i++) {
+      const code = generatePlayerCode()
+      expect(code).toHaveLength(PLAYER_CODE_LENGTH)
+      expect([...code].every(char => alphabet.has(char))).toBe(true)
+      expect(code).not.toMatch(/[ILOU]/)
+    }
   })
 
   it('generates base aliases and accepts canonical collision counters only', () => {
@@ -64,21 +70,12 @@ describe('adventurer identity rules', () => {
     expect(isGeneratedPlayerName('person@example.invalid')).toBe(false)
   })
 
-  it('salts every password and verifies it without storing the plain text', async () => {
-    const password = 'otter-42'
-    const first = await hashPlayerPassword(password)
-    const second = await hashPlayerPassword(password)
-    expect(first).not.toBe(second)
-    expect(first).toMatch(/^scrypt-v1:[a-f0-9]{32}:[a-f0-9]{64}$/)
-    expect(first).not.toContain(password)
-    expect(await verifyPlayerPassword(password, first)).toBe(true)
-    expect(await verifyPlayerPassword('Otter-42', first)).toBe(false)
-    expect(await verifyPlayerPassword('otter-42 ', first)).toBe(false)
-    expect(await verifyPlayerPassword('e\u0301cole', await hashPlayerPassword('\u00e9cole'))).toBe(
-      true
-    )
-    await expect(verifyPlayerPassword(password, 'bad-stored-hash')).rejects.toThrow(
-      'Stored password verifier is invalid'
-    )
+  it('hashes normalized secret codes deterministically without storing the plain text', async () => {
+    const hash = await hashPlayerCode('a-bc d1')
+    expect(hash).toMatch(/^[a-f0-9]{64}$/)
+    expect(hash).toBe(await hashPlayerCode('ABCDI'))
+    expect(hash).not.toContain('ABCD1')
+    expect(await hashPlayerCode('ABCDE')).not.toBe(hash)
+    await expect(hashPlayerCode('bad!')).rejects.toThrow('Player secret code is invalid')
   })
 })

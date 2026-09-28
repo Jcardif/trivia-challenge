@@ -7,14 +7,18 @@ describe('Function response validation', () => {
       userId: 'player', name: 'Amber Query Crafter', country: 'Canada', createdAt: '2026-09-21T00:00:00Z',
     }
     expect(validate.registerPlayer(player)).toBe(true)
+    expect(validate.registerPlayer({ ...player, secretCode: 'ABCDE' })).toBe(true)
     expect(validate.registerPlayer({ ...player, name: 'Amber Query Crafter 2' })).toBe(true)
     expect(validate.registerPlayer({ ...player, name: 'Amber Query Crafter 02' })).toBe(false)
     expect(validate.registerPlayer({ ...player, name: 'Real Person' })).toBe(false)
     expect(validate.registerPlayer({ ...player, playerCode: 'K042' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, secretCode: 'ABCD' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, secretCode: 'A-BCD-E' })).toBe(false)
     expect(validate.registerPlayer({ ...player, country: undefined })).toBe(false)
     expect(validate.registerPlayer({ ...player, country: 'Unlisted country' })).toBe(false)
     expect(validate.registerPlayer({ ...player, email: 'person@example.invalid' })).toBe(false)
     expect(validate.registerPlayer({ ...player, passwordHash: 'private' })).toBe(false)
+    expect(validate.registerPlayer({ ...player, secretCodeHash: 'private' })).toBe(false)
   })
 
   it('accepts decoded canonical responses and rejects extra JSON encoding', () => {

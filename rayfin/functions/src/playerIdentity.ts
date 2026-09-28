@@ -1,15 +1,25 @@
-export const PLAYER_NAME_MAX_LENGTH = 96
-export const PLAYER_PASSWORD_MIN_LENGTH = 4
-export const PLAYER_PASSWORD_MAX_LENGTH = 64
+import { PLAYER_NAME_PREFIXES, PLAYER_NAME_TITLES } from './playerNameWords.generated.js'
 
-function passwordLength(value: string): number {
-  return [...value.normalize('NFC')].length
+export const PLAYER_NAME_MAX_LENGTH = 96
+export const PLAYER_CODE_LENGTH = 5
+export const PLAYER_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+
+const PLAYER_CODE_PATTERN = new RegExp(`^[${PLAYER_CODE_ALPHABET}]{${PLAYER_CODE_LENGTH}}$`)
+const baseNames = new Set(
+  PLAYER_NAME_PREFIXES.flatMap(prefix => PLAYER_NAME_TITLES.map(title => `${prefix} ${title}`))
+)
+
+export function normalizePlayerCode(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '')
+    .replace(/[IL]/g, '1')
+    .replace(/O/g, '0')
 }
 
-export function isPlayerPassword(value: unknown): value is string {
-  if (typeof value !== 'string' || !value.trim()) return false
-  const length = passwordLength(value)
-  return length >= PLAYER_PASSWORD_MIN_LENGTH && length <= PLAYER_PASSWORD_MAX_LENGTH
+export function isPlayerCode(value: unknown): value is string {
+  return typeof value === 'string' && PLAYER_CODE_PATTERN.test(normalizePlayerCode(value))
 }
 
 export function isGeneratedPlayerName(value: unknown): value is string {
@@ -21,19 +31,4 @@ export function isGeneratedPlayerName(value: unknown): value is string {
   return counter >= 2 && counter <= 2_147_483_647 && baseNames.has(match[1])
 }
 
-// Returning players type their name, so accept any letter case and spacing and restore the stored spelling.
-export function normalizePlayerName(value: string): string {
-  const collapsed = value.trim().replace(/\s+/g, ' ')
-  const exact = canonicalBaseNames.get(collapsed.toLowerCase())
-  if (exact) return exact
-  const match = /^(.*) (\d+)$/.exec(collapsed)
-  const base = match && canonicalBaseNames.get(match[1].toLowerCase())
-  return base ? `${base} ${match[2]}` : collapsed
-}
-
-const baseNames = new Set(
-  PLAYER_NAME_PREFIXES.flatMap(prefix => PLAYER_NAME_TITLES.map(title => `${prefix} ${title}`))
-)
-const canonicalBaseNames = new Map([...baseNames].map(name => [name.toLowerCase(), name]))
-import { PLAYER_NAME_PREFIXES, PLAYER_NAME_TITLES } from './playerNameWords.generated.js'
 export { PLAYER_NAME_PREFIXES, PLAYER_NAME_TITLES } from './playerNameWords.generated.js'

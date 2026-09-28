@@ -1,17 +1,28 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { RayfinContext } from '@microsoft/fabric-user-data-functions'
 import type { SqlParameters, SqlRow, SqlTable, SqlValue } from '../src/sql.js'
-import {
-  isGeneratedPlayerName,
-  PLAYER_NAME_PREFIXES,
-  PLAYER_NAME_TITLES,
-} from '../src/playerIdentity.js'
 
+const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 const realCrypto = await import('node:crypto')
 let forceNameWords = false
+let queuedCodeIndexes: number[] = []
+function queueCodes(...codes: string[]) {
+  queuedCodeIndexes = codes.flatMap(code => [...code].map(char => {
+    const index = CODE_ALPHABET.indexOf(char)
+    if (index < 0) throw new Error(`Bad test code character ${char}`)
+    return index
+  }))
+}
 jest.unstable_mockModule('node:crypto', () => ({
   ...realCrypto,
-  randomInt: (max: number) => (forceNameWords ? 0 : realCrypto.randomInt(max)),
+  randomInt: (max: number) => {
+    if (max === CODE_ALPHABET.length && queuedCodeIndexes.length > 0) {
+      const next = queuedCodeIndexes.shift()
+      if (next === undefined) throw new Error('Missing queued code index')
+      return next
+    }
+    return forceNameWords && max !== CODE_ALPHABET.length ? 0 : realCrypto.randomInt(max)
+  },
 }))
 const realSql = await import('../src/sql.js')
 let tables: Record<string, SqlRow[]> = {}
@@ -29,13 +40,6 @@ const query = jest.fn(
     if (statement.includes('FROM [dbo].[PlayerEntryStates]')) {
       return tables.PlayerEntryStates.filter(row => row.id === parameters.id.value)
     }
-    if (statement.startsWith('UPDATE [dbo].[Players]')) {
-      const row = tables.Players.find(entry => entry.id === parameters.id.value)
-      if (!row) throw new Error('Player is missing')
-      row.failedAttempts = parameters.failures.value
-      row.attemptWindowStartedAt = parameters.started.value
-      return []
-    }
     if (statement.includes('AS [highestSuffix]')) {
       const base = String(parameters.name.value)
       const names = tables.Players.map(row => row.name).filter(
@@ -51,6 +55,14 @@ const query = jest.fn(
           highestSuffix: Math.max(names.includes(base) ? 1 : 0, ...suffixes),
         },
       ]
+    }
+    if (statement.includes('SELECT TOP 1 1 AS [exists]')) {
+      return tables.Players.some(row => row.secretCodeHash === parameters.hash.value)
+        ? [{ exists: 1 }]
+        : []
+    }
+    if (statement.includes('SELECT TOP 2') && statement.includes('[secretCodeHash] = @hash')) {
+      return tables.Players.filter(row => row.secretCodeHash === parameters.hash.value).slice(0, 2)
     }
     if (statement.includes('FROM [dbo].[Players]')) {
       return tables.Players.filter(row =>
@@ -104,24 +116,33 @@ jest.unstable_mockModule('../src/sql.js', () => ({
   ) => action({ ...dataSession, transaction }),
 }))
 const { registerPlayer, PLAYER_ENTRY_LIMITS } = await import('../src/players.js')
+const { hashPlayerCode } = await import('../src/playerCredentials.js')
+const {
+  isGeneratedPlayerName,
+  PLAYER_NAME_PREFIXES,
+  PLAYER_NAME_TITLES,
+} = await import('../src/playerIdentity.js')
 const ctx = new RayfinContext({
   rayFinEndpoint: 'https://example.invalid',
   publishableKey: 'pk-test',
   rayfinToken: '',
 })
-const PASSWORD = 'otter-42'
-const WRONG_PASSWORD = 'otter-43'
 const request = () => ({
-  mode: 'new',
+  mode: 'new' as const,
   requestId: realCrypto.randomUUID(),
   country: 'Canada',
-  password: PASSWORD,
 })
-const resume = (name: string, password = PASSWORD) => ({ mode: 'returning', name, password })
+const returning = (secretCode: string) => ({ mode: 'returning' as const, secretCode })
+function withoutCode<T extends { secretCode?: string }>(player: T): Omit<T, 'secretCode'> {
+  const publicPlayer = { ...player }
+  delete publicPlayer.secretCode
+  return publicPlayer
+}
 
 beforeEach(() => {
   tables = { Players: [], PlayerEntryStates: [] }
   forceNameWords = false
+  queuedCodeIndexes = []
   failPlayerInsert = false
   transactionTail = Promise.resolve()
   query.mockClear()
@@ -132,17 +153,18 @@ beforeEach(() => {
 describe('contact-free player persistence', () => {
   it('uses a plain name first, then 2 and 3, with one name query per concurrent creation', async () => {
     forceNameWords = true
+    queueCodes('00000', '00001', '00002')
     const base = `${PLAYER_NAME_PREFIXES[0]} ${PLAYER_NAME_TITLES[0]}`
     const inputs = [request(), request(), request()]
     const players = await Promise.all(inputs.map(input => registerPlayer(ctx, input)))
     expect(players.map(player => player.name)).toEqual([base, `${base} 2`, `${base} 3`])
-    expect(query.mock.calls.filter(([sql]) => sql.includes('AS [highestSuffix]'))).toHaveLength(3)
-    expect(await registerPlayer(ctx, inputs[1])).toEqual(players[1])
+    expect(players.map(player => player.secretCode)).toEqual(['00000', '00001', '00002'])
     expect(query.mock.calls.filter(([sql]) => sql.includes('AS [highestSuffix]'))).toHaveLength(3)
   })
 
   it('increments the highest numeric collision suffix rather than probing all existing names', async () => {
     forceNameWords = true
+    queueCodes('00000', '00001')
     const first = await registerPlayer(ctx, request())
     tables.Players.push(
       { name: `${first.name} 9` },
@@ -155,36 +177,39 @@ describe('contact-free player persistence', () => {
     expect(allocations[1][0]).toContain("LIKE @prefix ESCAPE N'~'")
   })
 
-  it('stores the selected country and returns it without disclosing private verification state', async () => {
+  it('stores the selected country and returns the one-time secret code without disclosing the hash', async () => {
+    queueCodes('ABCDE')
     const input = request()
     const player = await registerPlayer(ctx, input)
-    expect(Object.keys(player).sort()).toEqual(['country', 'createdAt', 'name', 'userId'])
+    expect(Object.keys(player).sort()).toEqual(['country', 'createdAt', 'name', 'secretCode', 'userId'])
     expect(player.country).toBe('Canada')
     expect(player.userId).toBe(input.requestId)
+    expect(player.secretCode).toBe('ABCDE')
     expect(isGeneratedPlayerName(player.name)).toBe(true)
     expect(tables.Players).toHaveLength(1)
-    expect(tables.Players[0]).toMatchObject({
-      id: input.requestId,
-      country: 'Canada',
-      failedAttempts: 0,
-    })
-    expect(tables.Players[0].passwordHash).toMatch(/^scrypt-v1:/)
-    expect(JSON.stringify(tables.Players[0])).not.toContain(PASSWORD)
-    for (const key of ['email', 'phoneNumber', 'state', 'city', 'password', 'playerCode']) {
+    expect(tables.Players[0]).toMatchObject({ id: input.requestId, country: 'Canada' })
+    expect(tables.Players[0].secretCodeHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(JSON.stringify(tables.Players[0])).not.toContain('ABCDE')
+    for (const key of ['email', 'phoneNumber', 'state', 'city', 'password', 'playerCode', 'secretCode']) {
       expect(tables.Players[0]).not.toHaveProperty(key)
     }
-    expect(JSON.stringify(player)).not.toMatch(/password|hash|salt|failedAttempts/i)
+    expect(JSON.stringify(player)).not.toMatch(/hash|salt/i)
+    const returned = await registerPlayer(ctx, returning('a-bcde'))
+    expect(returned).toEqual(withoutCode(player))
+    expect(Object.keys(returned)).not.toContain('secretCode')
   })
 
-  it('does not change the saved country when a creation ID is replayed with different input', async () => {
+  it('rejects a replayed creation ID without rotating or reissuing the secret code', async () => {
+    queueCodes('ABCDE')
     const input = request()
-    const player = await registerPlayer(ctx, input)
-    await expect(registerPlayer(ctx, { ...input, country: 'Kenya' })).rejects.toMatchObject({
-      code: 'PLAYER_REGISTRATION_CONFLICT',
+    await registerPlayer(ctx, input)
+    const storedHash = tables.Players[0].secretCodeHash
+    await expect(registerPlayer(ctx, input)).rejects.toMatchObject({
+      code: 'PLAYER_ALREADY_CREATED',
+      retryable: false,
     })
     expect(tables.Players).toHaveLength(1)
-    expect(tables.Players[0].country).toBe('Canada')
-    expect(await registerPlayer(ctx, resume(player.name))).toEqual(player)
+    expect(tables.Players[0].secretCodeHash).toBe(storedHash)
   })
 
   it.each([
@@ -195,7 +220,8 @@ describe('contact-free player persistence', () => {
     ['Saint Barthélemy', 'Saint Barthelemy'],
     ['São Tomé and Príncipe', 'Sao Tome and Principe'],
     ['Türkiye', 'Turkiye'],
-  ])('stores %s as %s and preserves legacy-player returns and creation retries', async (previous, current) => {
+  ])('stores %s as %s and preserves legacy country reads', async (previous, current) => {
+    queueCodes('ABCDE')
     const input = { ...request(), country: previous }
     const player = await registerPlayer(ctx, input)
     expect(player.country).toBe(current)
@@ -207,25 +233,22 @@ describe('contact-free player persistence', () => {
     expect(rows[0][columns.indexOf('country')]).toEqual(realSql.str(current, 80))
 
     tables.Players[0].country = previous
-    expect(await registerPlayer(ctx, resume(player.name))).toEqual(player)
-    expect(await registerPlayer(ctx, { ...input, country: current })).toEqual(player)
-    expect(await registerPlayer(ctx, input)).toEqual(player)
+    expect(await registerPlayer(ctx, returning('ABCDE'))).toEqual(withoutCode(player))
     expect(tables.Players).toHaveLength(1)
     expect(tables.Players[0].country).toBe(previous)
-    await expect(registerPlayer(ctx, { ...input, country: 'Canada' })).rejects.toMatchObject({
-      code: 'PLAYER_REGISTRATION_CONFLICT',
-    })
   })
 
-  it('replays a creation after a lost response and returns the same player on simultaneous requests', async () => {
+  it('serializes simultaneous creation attempts with the same request ID', async () => {
+    queueCodes('ABCDE')
     const input = request()
-    const [first, replay] = await Promise.all([
+    const [first, replay] = await Promise.allSettled([
       registerPlayer(ctx, input),
       registerPlayer(ctx, input),
     ])
-    expect(replay).toEqual(first)
-    expect(tables.Players).toHaveLength(1)
-    expect(await registerPlayer(ctx, resume(`  ${first.name.toUpperCase()}  `))).toEqual(first)
+    expect(first.status).toBe('fulfilled')
+    expect(replay.status).toBe('rejected')
+    if (replay.status !== 'rejected') throw new Error('Expected replay to reject')
+    expect(replay.reason).toMatchObject({ code: 'PLAYER_ALREADY_CREATED' })
     expect(tables.Players).toHaveLength(1)
     expect(
       query.mock.calls.some(
@@ -235,55 +258,65 @@ describe('contact-free player persistence', () => {
     ).toBe(true)
   })
 
-  it('rejects a different password for either returning entry or an existing creation ID', async () => {
-    const input = request()
-    const player = await registerPlayer(ctx, input)
-    await expect(registerPlayer(ctx, resume(player.name, WRONG_PASSWORD))).rejects.toMatchObject({
+  it('verifies a returning player by normalized secret code only', async () => {
+    queueCodes('ABCDE')
+    const player = await registerPlayer(ctx, request())
+    await expect(registerPlayer(ctx, returning('ZZZZZ'))).rejects.toMatchObject({
       code: 'PLAYER_VERIFICATION_FAILED',
     })
-    await expect(registerPlayer(ctx, { ...input, password: WRONG_PASSWORD })).rejects.toMatchObject({
-      code: 'PLAYER_VERIFICATION_FAILED',
-    })
-    expect(tables.Players[0].failedAttempts).toBe(2)
-    expect(tables.Players).toHaveLength(1)
+    expect(await registerPlayer(ctx, returning(' ab-cde '))).toEqual(withoutCode(player))
   })
 
-  it('keeps failed attempts committed, locks the player temporarily, and permits retry after the window', async () => {
+  it('does not reveal whether an unknown or duplicate secret code caused a failure', async () => {
+    queueCodes('ABCDE')
     const player = await registerPlayer(ctx, request())
-    for (let i = 0; i < PLAYER_ENTRY_LIMITS.failuresPerPlayer; i++) {
-      await expect(registerPlayer(ctx, resume(player.name, WRONG_PASSWORD))).rejects.toMatchObject({
-        code: 'PLAYER_VERIFICATION_FAILED',
-      })
-    }
-    expect(tables.Players[0].failedAttempts).toBe(PLAYER_ENTRY_LIMITS.failuresPerPlayer)
-    await expect(registerPlayer(ctx, resume(player.name))).rejects.toMatchObject({
-      code: 'PLAYER_VERIFICATION_FAILED',
-    })
-    tables.Players[0].attemptWindowStartedAt = new Date(
-      Date.now() - PLAYER_ENTRY_LIMITS.playerWindowMs - 100
-    )
-    expect(await registerPlayer(ctx, resume(player.name))).toEqual(player)
-    expect(tables.Players[0].failedAttempts).toBe(0)
-  })
-
-  it('does not reveal whether an unknown name or an incorrect password caused a failure', async () => {
-    const player = await registerPlayer(ctx, request())
-    const missing = await registerPlayer(ctx, resume(`${player.name} 7`)).catch(error => error)
-    const incorrect = await registerPlayer(ctx, resume(player.name, WRONG_PASSWORD)).catch(
-      error => error
-    )
+    const missing = await registerPlayer(ctx, returning('ZZZZZ')).catch(error => error)
+    tables.Players.push({ ...tables.Players[0], id: realCrypto.randomUUID(), name: `${player.name} 2` })
+    const duplicate = await registerPlayer(ctx, returning('ABCDE')).catch(error => error)
     expect(missing.code).toBe('PLAYER_VERIFICATION_FAILED')
-    expect(incorrect.code).toBe(missing.code)
-    expect(incorrect.message).toBe(missing.message)
+    expect(duplicate.code).toBe(missing.code)
+    expect(duplicate.message).toBe(missing.message)
   })
 
-  it('does not accept any password for a player saved before passwords existed', async () => {
-    const player = await registerPlayer(ctx, request())
-    tables.Players[0].passwordHash = null
-    await expect(registerPlayer(ctx, resume(player.name))).rejects.toMatchObject({
+  it('does not accept any code for a player saved before secret codes existed', async () => {
+    queueCodes('ABCDE')
+    await registerPlayer(ctx, request())
+    tables.Players[0].secretCodeHash = null
+    await expect(registerPlayer(ctx, returning('ABCDE'))).rejects.toMatchObject({
       code: 'PLAYER_VERIFICATION_FAILED',
     })
-    expect(tables.Players[0].failedAttempts).toBe(1)
+  })
+
+  it('retries secret-code allocation collisions before inserting the player', async () => {
+    const collisionHash = await hashPlayerCode('00000')
+    tables.Players.push({
+      id: realCrypto.randomUUID(),
+      name: 'Amber Query Crafter',
+      country: 'Canada',
+      secretCodeHash: collisionHash,
+      createdAt: new Date(),
+    })
+    queueCodes('00000', '00001')
+    const player = await registerPlayer(ctx, request())
+    expect(player.secretCode).toBe('00001')
+    expect(tables.Players.at(-1)?.secretCodeHash).toBe(await hashPlayerCode('00001'))
+    expect(query.mock.calls.filter(([sql]) => sql.includes('SELECT TOP 1 1 AS [exists]'))).toHaveLength(2)
+  })
+
+  it('returns a retryable error when secret-code allocation keeps colliding', async () => {
+    tables.Players.push({
+      id: realCrypto.randomUUID(),
+      name: 'Amber Query Crafter',
+      country: 'Canada',
+      secretCodeHash: await hashPlayerCode('00000'),
+      createdAt: new Date(),
+    })
+    queueCodes('00000', '00000', '00000', '00000', '00000')
+    await expect(registerPlayer(ctx, request())).rejects.toMatchObject({
+      code: 'PLAYER_CODE_UNAVAILABLE',
+      retryable: true,
+    })
+    expect(tables.Players).toHaveLength(1)
   })
 
   it('enforces the shared minute limit across requests without using attendee/IP identifiers', async () => {
@@ -298,17 +331,20 @@ describe('contact-free player persistence', () => {
     expect(query).toHaveBeenCalledTimes(1)
     expect(tables.Players).toHaveLength(0)
     tables.PlayerEntryStates[0].windowStartedAt = new Date(Date.now() - 60_100)
+    queueCodes('ABCDE')
     await registerPlayer(ctx, request())
     expect(tables.PlayerEntryStates[0].attemptCount).toBe(1)
   })
 
   it('rolls back a partially created identity on SQL failure, allowing a stable retry', async () => {
     failPlayerInsert = true
+    queueCodes('ABCDE')
     const input = request()
     await expect(registerPlayer(ctx, input)).rejects.toThrow('Simulated player insert failure')
     expect(tables.Players).toHaveLength(0)
     expect(tables.PlayerEntryStates).toHaveLength(0)
     failPlayerInsert = false
+    queueCodes('ABCDE')
     expect((await registerPlayer(ctx, input)).userId).toBe(input.requestId)
   })
 

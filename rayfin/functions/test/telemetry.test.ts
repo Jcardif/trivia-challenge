@@ -91,6 +91,8 @@ describe('telemetry function validation and envelope', () => {
     { latitude: 43.6 },
     { nested: { password: 'otter-42' } },
     { password_hash: 'private' },
+    { secretCode: 'ABCDE' },
+    { nested: { secretCodeHash: 'private' } },
   ])('rejects attendee details and credentials at the publisher boundary: %o', properties => {
     expect(() => validateTelemetryBatch({
       events: [event({ event: 'user.register', type: 'user', properties })],
@@ -492,25 +494,28 @@ describe('browser telemetry delivery', () => {
   it('never queues contact details, passwords, or arbitrary registration names', async () => {
     for (const properties of [
       { email: 'person@example.invalid' }, { password: 'otter-42' },
-      { nested: { passwordHash: 'private' } }, { name: 'Real Person' },
+      { nested: { passwordHash: 'private' } }, { secretCode: 'ABCDE' },
+      { nested: { secretCodeHash: 'private' } }, { name: 'Real Person' },
       { country: 'Canada, Ontario' }, { nested: { city: 'Toronto' } },
     ]) service.track('user.register', properties)
     service.track('user.register', { name: 'Amber Query Crafter', country: 'Canada', entryMode: 'returning' })
     await service.flush()
-    expect(service.getDeliveryStatus()).toMatchObject({ droppedCount: 6, deliveredCount: 1 })
+    expect(service.getDeliveryStatus()).toMatchObject({ droppedCount: 8, deliveredCount: 1 })
     expect(sender.mock.calls[0][0][0].properties).toEqual({ name: 'Amber Query Crafter', country: 'Canada', entryMode: 'returning' })
     expect(JSON.stringify(warn.mock.calls)).not.toMatch(/person@example|otter-42|Real Person/)
   })
 
   it('does not capture clicks, touches, or keystrokes inside a private entry region, including SVG targets', async () => {
     service.initialize()
-    document.body.innerHTML = '<section data-telemetry-private><button id="entry"><svg><path /></svg>Enter</button><input id="password" type="password" value="otter-42" /></section>'
+    document.body.innerHTML = '<section data-telemetry-private><button id="entry"><svg><path /></svg>Enter</button><input id="secret-code" type="password" value="ABCDE" /></section>'
     const button = document.getElementById('entry')
+    const input = document.getElementById('secret-code')
     const svg = document.querySelector('svg')
-    if (!button || !svg) throw new Error('Private fixture missing')
+    if (!button || !input || !svg) throw new Error('Private fixture missing')
     button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
     svg.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
     button.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'A', bubbles: true }))
     const touch = new dom.window.Event('touchstart', { bubbles: true })
     Object.defineProperty(touch, 'touches', { value: [{ clientX: 10, clientY: 10 }] })
     svg.dispatchEvent(touch)

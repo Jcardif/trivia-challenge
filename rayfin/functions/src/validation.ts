@@ -2,14 +2,7 @@ import type { CreatePoolInput, EndSessionRequest, RegisterUserRequest, SubmitAns
 import { DomainError } from './errors.js'
 import { isCountry, normalizeCountry } from './countries.js'
 import { GAME_RULE_DEFAULTS } from './gameRules.js'
-import {
-  isGeneratedPlayerName,
-  isPlayerPassword,
-  normalizePlayerName,
-  PLAYER_NAME_MAX_LENGTH,
-  PLAYER_PASSWORD_MAX_LENGTH,
-  PLAYER_PASSWORD_MIN_LENGTH,
-} from './playerIdentity.js'
+import { isPlayerCode, normalizePlayerCode } from './playerIdentity.js'
 
 export const TEXT_LIMIT = 4000
 export const SLUG_LIMIT = 400
@@ -76,24 +69,21 @@ export function boolean(value: unknown, field: string): boolean {
 
 export function registrationInput(value: unknown): RegisterUserRequest {
   const input = record(value)
+  if (input.mode !== 'new' && input.mode !== 'returning') return invalid('Choose new or returning adventurer.')
   const allowed = input.mode === 'new'
-    ? ['mode', 'requestId', 'country', 'password']
-    : ['mode', 'name', 'password']
+    ? ['mode', 'requestId', 'country']
+    : ['mode', 'secretCode']
   if (Object.keys(input).some(key => !allowed.includes(key))) {
-    return invalid('Player entry accepts only a country and password for a new adventurer, or an adventurer name and password.')
+    return invalid('Player entry accepts only mode, requestId, and country for a new adventurer, or mode and secretCode for a returning adventurer. Names, passwords, player codes, and runes are not accepted.')
   }
-  if (!isPlayerPassword(input.password)) {
-    return invalid(`Use a password of ${PLAYER_PASSWORD_MIN_LENGTH} to ${PLAYER_PASSWORD_MAX_LENGTH} characters.`)
-  }
-  const password = input.password
   if (input.mode === 'new') {
     if (!isCountry(input.country)) return invalid('Choose a country or region from the list.')
-    return { mode: 'new', requestId: uuid(input.requestId, 'requestId'), country: normalizeCountry(input.country), password }
+    return { mode: 'new', requestId: uuid(input.requestId, 'requestId'), country: normalizeCountry(input.country) }
   }
-  if (input.mode !== 'returning') return invalid('Choose new or returning adventurer.')
-  const name = normalizePlayerName(text(input.name, 'Adventurer name', PLAYER_NAME_MAX_LENGTH * 2))
-  if (!isGeneratedPlayerName(name)) return invalid('Enter the adventurer name you were given, such as Amber Query Crafter.')
-  return { mode: 'returning', name, password }
+  if (typeof input.secretCode !== 'string') return invalid('Enter your 5-character secret code.')
+  const secretCode = normalizePlayerCode(input.secretCode)
+  if (!isPlayerCode(secretCode)) return invalid('Enter your 5-character secret code.')
+  return { mode: 'returning', secretCode }
 }
 
 export function poolInput(value: unknown): Required<Omit<CreatePoolInput, 'description'>> & { description?: string } {
