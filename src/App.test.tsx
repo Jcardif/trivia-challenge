@@ -617,8 +617,8 @@ describe('adventurer names and secret codes', () => {
     expect(screen.getByRole('heading', { name: "You're in, adventurer" })).toBeInTheDocument()
     expect(screen.getByLabelText('Adventurer name')).toHaveTextContent(player.name)
     expect(screen.getByLabelText('Secret code')).toHaveTextContent('ABCDE')
-    expect(screen.getByText(/Take a photo of your secret code now/)).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Your adventurer name' })).toHaveFocus()
+    expect(screen.getByText(/Take a photo of your ticket/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Adventurer' })).toHaveFocus()
     expect(invoke).toHaveBeenCalledWith('registerPlayer', {
       mode: 'new',
       requestId: expect.any(String),
@@ -697,9 +697,13 @@ describe('adventurer names and secret codes', () => {
     render(<App />)
     await fillReturning('ab-cde')
     const code = screen.getByLabelText('Secret code')
-    expect(code).toHaveAttribute('type', 'password')
-    expect(code).toHaveAttribute('autocomplete', 'new-password')
+    expect(code).toHaveAttribute('type', 'text')
+    expect(code).toHaveAttribute('autocomplete', 'off')
     expect(code).toHaveAttribute('autocapitalize', 'characters')
+    expect(code).toHaveValue('ABCDE')
+    expect(document.querySelector('input[type="password"]')).not.toBeInTheDocument()
+    expect(screen.getByRole('form', { name: 'Adventurer entry' })).toHaveTextContent('*****')
+    expect(screen.getByRole('form', { name: 'Adventurer entry' })).not.toHaveTextContent('ABCDE')
     expect(screen.queryByLabelText('Adventurer name')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByText("That secret code didn't match an adventurer. Check your photo and try again, or start a new challenge.")

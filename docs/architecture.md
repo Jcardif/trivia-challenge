@@ -66,11 +66,11 @@ This is lightweight verification for supervised kiosks, not strong account authe
 
 ### Entry interface
 
-The initial view is new entry, with the country picker and a link to returning entry. Returning entry has one masked secret-code field and a link back to new entry. Before submitting, the page checks the country or code and focuses the first invalid field.
+The initial view is new entry, with the country picker and a link to returning entry. Returning entry shows an empty ticket with five secret-code slots and a link back to new entry. Before submitting, the page checks the country or code and focuses the first invalid field.
 
-The secret-code input is masked and has no reveal control. It uses `autocomplete="new-password"` so a kiosk browser does not autofill an earlier attendee's code. A verification mismatch clears the code. Network and operator-session failures keep it for explicit retry.
+The secret-code input is a plain text field layered under the slots. It has `autocomplete="off"` so a kiosk browser does not suggest an earlier attendee's code, and it is not a password field, so the browser never offers to save it. Each slot shows `*` for a typed character, and the field drops characters that normalization cannot turn into the code alphabet. A verification mismatch clears the code. Network and operator-session failures keep it for explicit retry.
 
-After creation succeeds, the reveal screen shows the generated name and code, then **Begin trivia** continues. A failed creation locks its request ID and country, and offers a retry of the same request. The privacy footer shows the Terms and Conditions QR asset at `public/terms-qr.png`.
+After creation succeeds, the reveal screen shows the generated name and code on a ticket and asks the attendee to photograph it, then **Begin trivia** continues. A failed creation locks its request ID and country, and offers a retry of the same request. The privacy footer shows the Terms and Conditions QR asset at `public/terms-qr.png`.
 
 Station avatars are mirrored so they face into the page. Entry styles stay scoped to the page; other routes retain their own scrolling and station-avatar behavior.
 

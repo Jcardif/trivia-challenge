@@ -12,7 +12,7 @@ Set up a supervised station, admit players, and recover interrupted requests wit
 
 The operator signs in once per browser session. Attendees use the adventurer entry screen and do not need Fabric accounts.
 
-Turn off password saving and autofill in the kiosk browser profile. Returning attendees type a secret code at a shared station, and saved form data could be offered to a later attendee.
+Turn off autofill in the kiosk browser profile. Returning attendees type a secret code at a shared station, and saved form data could be offered to a later attendee. The code field is not a password field, so browsers do not offer to save it.
 
 Each operator uses their own Fabric account with permission to run the same deployed app. The backend uses a separate application identity for SQL, so operators do not enter or share a database credential. All stations still use the same database and Eventstream. Assign each kiosk its own station ID for the shared scoreboard.
 
@@ -21,8 +21,8 @@ Each operator uses their own Fabric account with permission to run the same depl
 ### New players
 
 1. On the default entry screen, select **Choose your country / region**. Use **Find your country...** to search, then select a listed name with a click or the arrow keys and Enter.
-2. Select **Start a new challenge**. The generated adventurer name and secret code replace the form.
-3. Tell the attendee to photograph or screenshot the secret code. It will not be shown again.
+2. Select **Start a new challenge**. A ticket with the generated adventurer name and secret code replaces the form.
+3. Tell the attendee to photograph or screenshot the ticket. The code will not be shown again.
 4. Select **Begin trivia**.
 
 The secret code is the only thing a returning attendee needs. It is not displayed again, stored in browser storage, or published in telemetry. The Terms and Conditions QR image is loaded from `public/terms-qr.png` in the entry footer.
@@ -33,7 +33,7 @@ If creation is interrupted, keep the tab open and select **Retry**. The app keep
 
 From new-player entry, select **Have your secret code? Enter it here**.
 
-1. Under **Secret code**, type the code from the attendee's photo, then select **Continue**.
+1. Type the code from the attendee's photo into the **Secret code** slots. Each character shows as `*`. Then select **Continue**.
 
 A mismatch clears the code and asks the attendee to check the photo or start a new challenge. Connection or operator-session failures keep the code; select **Continue** again to retry.
 

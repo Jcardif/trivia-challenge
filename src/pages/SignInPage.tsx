@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, Camera, Check, KeyRound, MapPin } from 'lucide-react'
+import { ArrowRight, Camera, MapPin } from 'lucide-react'
 import EntryCountryPicker from '../components/EntryCountryPicker'
 import StationAvatar from '../components/StationAvatar'
 import { useGame } from '../context/GameContext'
@@ -9,13 +9,25 @@ import { OperationError } from '../services/operationError'
 import { analytics } from '../services/analyticsService'
 import { isCountry } from '../../rayfin/functions/src/countries'
 import { getStationLockdownMessage, isStationLockdownActive } from '../lib/stationLockdown'
-import { isPlayerCode, normalizePlayerCode } from '../../rayfin/functions/src/playerIdentity'
+import {
+  isPlayerCode,
+  normalizePlayerCode,
+  PLAYER_CODE_ALPHABET,
+  PLAYER_CODE_LENGTH,
+} from '../../rayfin/functions/src/playerIdentity'
 import type { RegisteredPlayer, RegisterUserRequest, User } from '../types/api'
 import './SignInPage.css'
 
 type InvalidField = 'code' | null
 
 const CODE_RULE = 'Enter your 5-character secret code.'
+
+// Each slot shows one character, so drop anything a code can never contain.
+const toCodeCharacters = (value: string) =>
+  [...normalizePlayerCode(value)]
+    .filter(char => PLAYER_CODE_ALPHABET.includes(char))
+    .join('')
+    .slice(0, PLAYER_CODE_LENGTH)
 
 function withoutSecretCode(player: RegisteredPlayer): User {
   const user = { ...player }
@@ -45,7 +57,7 @@ export default function SignInPage() {
   const creationFrozen = pendingCreation !== null
   const issued = registered !== null
   const controlsDisabled = isSubmitting || creationFrozen || issued || isLockdownActive
-  const detailsReady = mode === 'new' ? isCountry(country) : secretCode.trim().length > 0
+  const detailsReady = mode === 'new' ? isCountry(country) : secretCode.length > 0
   const canSubmit = !isSubmitting && !isLockdownActive && (creationFrozen || detailsReady)
 
   useEffect(() => {
@@ -233,90 +245,119 @@ export default function SignInPage() {
                 )}
               </div>
             </div>
-            <div className="entry-lock" data-entry-error={displayedError || undefined}>
-              <h2 className="entry-secret-heading">
-                {issued
-                  ? "Take a photo now. Your secret code won't be shown again."
-                  : mode === 'returning'
-                    ? 'Enter the secret code from your photo.'
-                    : "Choose your country or region. We'll give you an adventurer name and a secret code."}
-              </h2>
+            <div
+              className="entry-lock"
+              data-ticket={issued || mode === 'returning'}
+              data-entry-error={displayedError || undefined}
+            >
               {issued ? (
-                <section className="entry-name-reveal" aria-label="Your adventurer is ready">
-                  <div className="entry-issued-name">
-                    <div className="entry-issued-block">
+                <section className="entry-ticket-stage" aria-label="Your adventurer is ready">
+                  <article className="entry-ticket">
+                    <header className="entry-ticket-stub">
                       <h2
                         ref={nameHeading}
                         tabIndex={-1}
-                        className="entry-control-label"
+                        className="entry-ticket-kicker"
                         aria-describedby="entry-issued-value"
                       >
-                        <b>
-                          <Check size={15} aria-hidden="true" />
-                        </b>
-                        Your adventurer name
-                      </h2>
-                      <output id="entry-issued-value" aria-label="Adventurer name">
-                        {registered.name}
-                      </output>
-                    </div>
-                    <div className="entry-issued-block entry-code-block">
-                      <h2 className="entry-control-label" aria-describedby="entry-issued-code">
-                        <b>
-                          <KeyRound size={15} aria-hidden="true" />
-                        </b>
-                        Your secret code
+                        Adventurer
                       </h2>
                       <output
+                        id="entry-issued-value"
+                        className="entry-ticket-name"
+                        aria-label="Adventurer name"
+                      >
+                        {registered.name}
+                      </output>
+                    </header>
+                    <div className="entry-ticket-perf" aria-hidden="true" />
+                    <div className="entry-ticket-body">
+                      <span className="entry-ticket-kicker">Secret code</span>
+                      <output
                         id="entry-issued-code"
-                        className="entry-issued-code"
+                        className="entry-code-tiles"
                         aria-label="Secret code"
                       >
-                        {issuedCode}
+                        {issuedCode?.split('').map((char, index) => (
+                          <span key={index}>{char}</span>
+                        ))}
                       </output>
-                    </div>
-                    <div className="entry-code-callout" role="note">
-                      <Camera size={22} aria-hidden="true" />
-                      <p>
-                        Take a photo of your secret code now. It won't be shown again, and it's all
-                        you need to come back.
-                      </p>
-                    </div>
-                  </div>
-                </section>
-              ) : (
-                <div className="entry-secret">
-                  {mode === 'returning' ? (
-                    <label className="entry-field">
-                      <span className="entry-control-label" data-current={!detailsReady}>
-                        <b>01</b> Secret code
+                      <span className="entry-ticket-foot" aria-hidden="true">
+                        Microsoft Fabric Trivia Challenge
                       </span>
-                      <span className="entry-input-shell">
-                        <KeyRound size={22} aria-hidden="true" />
+                    </div>
+                  </article>
+                  <p className="entry-ticket-note" role="note">
+                    <Camera size={24} aria-hidden="true" />
+                    <span>
+                      <b>Take a photo of your ticket.</b> Your code won't be shown again, and it's
+                      all you need to come back.
+                    </span>
+                  </p>
+                </section>
+              ) : mode === 'returning' ? (
+                <div className="entry-ticket-stage">
+                  <article className="entry-ticket" data-invalid={invalidField === 'code'}>
+                    <div className="entry-ticket-stub" aria-hidden="true">
+                      <span className="entry-ticket-kicker">Adventurer</span>
+                      <span className="entry-ticket-blank" />
+                    </div>
+                    <div className="entry-ticket-perf" aria-hidden="true" />
+                    <div className="entry-ticket-body">
+                      <span className="entry-ticket-kicker" aria-hidden="true">
+                        Secret code
+                      </span>
+                      <div className="entry-code-slots" data-checking={isSubmitting}>
+                        {Array.from({ length: PLAYER_CODE_LENGTH }, (_, index) => (
+                          <span
+                            key={index}
+                            aria-hidden="true"
+                            data-filled={index < secretCode.length}
+                            data-next={index === secretCode.length}
+                          >
+                            {index < secretCode.length ? '*' : null}
+                          </span>
+                        ))}
+                        {/* A plain text field under the slots, so browsers never offer to save
+                            the code as a password. Shared kiosk: autocomplete stays off. */}
                         <input
                           ref={codeInput}
-                          className="entry-input"
-                          type="password"
-                          name="secretCode"
+                          className="entry-code-input"
+                          type="text"
                           aria-label="Secret code"
                           aria-invalid={invalidField === 'code'}
                           aria-describedby={describedBy('code', 'entry-code-hint')}
                           value={secretCode}
-                          // Shared kiosk: never autofill another attendee's saved code.
-                          autoComplete="new-password"
+                          autoComplete="off"
+                          autoCorrect="off"
                           autoCapitalize="characters"
                           spellCheck={false}
                           maxLength={12}
                           disabled={controlsDisabled}
                           onChange={event => {
-                            setSecretCode(event.target.value)
+                            setSecretCode(toCodeCharacters(event.target.value))
                             setError(null)
                             setInvalidField(null)
                           }}
                         />
+                      </div>
+                      <span className="entry-ticket-foot" aria-hidden="true">
+                        Microsoft Fabric Trivia Challenge
                       </span>
-                    </label>
-                  ) : (
+                    </div>
+                  </article>
+                  <p className="entry-ticket-note" id="entry-code-hint">
+                    <Camera size={24} aria-hidden="true" />
+                    <b>Type the code from your ticket photo.</b>
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <h2 className="entry-secret-heading">
+                    Choose your country or region. We'll give you an adventurer name and a secret
+                    code.
+                  </h2>
+                  <div className="entry-secret">
                     <EntryCountryPicker
                       value={country}
                       disabled={controlsDisabled}
@@ -325,13 +366,8 @@ export default function SignInPage() {
                         setError(null)
                       }}
                     />
-                  )}
-                  {mode === 'returning' && (
-                    <p className="entry-hint" id="entry-code-hint">
-                      5 letters and numbers. Capitals don't matter.
-                    </p>
-                  )}
-                </div>
+                  </div>
+                </>
               )}
               <div className="entry-final-action">
                 {displayedError ? (
