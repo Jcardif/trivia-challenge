@@ -176,7 +176,7 @@ The results screen shows QR codes for the existing public resources:
 
 | Destination           | URL                           |
 | --------------------- | ----------------------------- |
-| Leaderboard           | https://aka.ms/fabrictrivia/l |
+| Leaderboard           | https://aka.ms/trivia-powerbi |
 | Fabric learning       | https://aka.ms/fabrictrivia/f |
 | Fabric certifications | https://aka.ms/eu/cert        |
 

@@ -114,7 +114,7 @@ const QR_LINKS = [
   {
     id: 'leaderboard',
     title: 'View the Leaderboard',
-    href: 'https://aka.ms/fabrictrivia/l',
+    href: 'https://aka.ms/trivia-powerbi',
     description: 'See how your score compares.',
   },
   {
