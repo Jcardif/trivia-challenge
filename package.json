@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "rayfin dev",
     "dev:frontend": "npm run entry:generate && vite --host 127.0.0.1 --port 5173",
+    "prototype:results": "vite --host 127.0.0.1 --port 5180 --open /results-prototype.html",
     "names:generate": "node scripts/generate-player-names.mjs",
     "countries:generate": "node scripts/generate-countries.mjs",
     "entry:generate": "npm run names:generate && npm run countries:generate",
